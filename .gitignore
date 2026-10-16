@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data (mood logs, escalation tickets) and vector store
+var/
+.chroma/
+
+# Eval output (contains real model replies)
+evals/reports/*
+!evals/reports/.gitkeep
+.deepeval/
+/.deepeval*
+/deepeval-*
+/ragas_*.csv
+
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.DS_Store
