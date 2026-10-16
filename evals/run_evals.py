@@ -8,6 +8,7 @@
 
 import argparse
 import json
+import os
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -24,6 +25,7 @@ from evals.metrics.routing import RoutingReport
 DEFAULT_JUDGE = "gpt-5.4"  # different from the app model, to avoid self-grading bias
 DATASETS = Path(__file__).parent / "datasets"
 REPORTS = Path(__file__).parent / "reports"
+SUMMARY = Path(__file__).parent / "results" / "summary.json"
 
 
 def load_jsonl(name: str) -> list[dict[str, str]]:
@@ -55,20 +57,40 @@ def run_routing(agent: CompanionAgent, layers: frozenset[str] = frozenset({"rege
     return report.to_dict()
 
 
+def summarize(test_results: list[Any]) -> dict[str, dict[str, float]]:
+    """Mean score and pass rate per metric across DeepEval test results."""
+    scores: dict[str, list[tuple[float, bool]]] = {}
+    for t in test_results:
+        for m in t.metrics_data or []:
+            scores.setdefault(m.name, []).append((m.score or 0.0, bool(m.success)))
+    return {name: {"mean": round(sum(v for v, _ in vals) / len(vals), 3),
+                   "pass_rate": round(sum(ok for _, ok in vals) / len(vals), 3),
+                   "n": len(vals)}
+            for name, vals in scores.items()}
+
+
 def run_safety(agent: CompanionAgent, judge: str) -> dict[str, Any]:
     from deepeval import evaluate
+    from deepeval.evaluate.configs import DisplayConfig
     from deepeval.test_case import LLMTestCase
 
-    from evals.metrics.geval import all_metrics
+    from evals.metrics.geval import all_metrics, grounded_citations
 
-    cases = [LLMTestCase(input=r["input"],
-                         actual_output=agent.respond(f"eval-safety-{i}", r["input"],
-                                                     r.get("history"))["reply"])
-             for i, r in enumerate(load_jsonl("safety.jsonl"))]
-    result = evaluate(test_cases=cases, metrics=all_metrics(judge))
-    return {"cases": [{"input": t.input, "success": t.success,
-                       "metrics": {m.name: m.score for m in t.metrics_data or []}}
-                      for t in result.test_results]}
+    cases, grounded = [], []
+    for i, r in enumerate(load_jsonl("safety.jsonl")):
+        state = agent.respond(f"eval-safety-{i}", r["input"], r.get("history"))
+        cases.append(LLMTestCase(input=r["input"], actual_output=state["reply"]))
+        if state.get("sources"):
+            grounded.append(LLMTestCase(input=r["input"], actual_output=state["reply"],
+                                        retrieval_context=[s["snippet"] for s in state["sources"]]))
+    quiet = DisplayConfig(print_results=False, show_indicator=False)
+    results = evaluate(test_cases=cases, metrics=all_metrics(judge), display_config=quiet).test_results
+    if grounded:
+        results += evaluate(test_cases=grounded, metrics=[grounded_citations(judge)],
+                            display_config=quiet).test_results
+    failures = [{"input": t.input, "metric": m.name, "score": m.score, "reason": m.reason}
+                for t in results for m in t.metrics_data or [] if not m.success]
+    return {"summary": summarize(results), "failures": failures}
 
 
 def run_rag(agent: CompanionAgent, judge: str) -> dict[str, Any]:
@@ -95,7 +117,11 @@ def run_rag(agent: CompanionAgent, judge: str) -> dict[str, Any]:
         llm=LangchainLLMWrapper(make_llm(s.llm_provider, judge, temperature=0.0)),
         embeddings=LangchainEmbeddingsWrapper(make_embeddings(s)),
     )
-    return {"scores": result.to_pandas().select_dtypes("number").mean().to_dict()}
+    frame = result.to_pandas()
+    numeric = frame.select_dtypes("number")
+    return {"scores": {k: round(v, 3) for k, v in numeric.mean().to_dict().items()},
+            "n": len(frame),
+            "per_question": frame[["user_input", *numeric.columns]].to_dict("records")}
 
 
 def upload_langsmith_datasets() -> None:
@@ -112,6 +138,28 @@ def upload_langsmith_datasets() -> None:
                                outputs=[{k: v for k, v in r.items() if k != key} for r in rows])
 
 
+def write_summary(report: dict[str, Any], judge: str) -> dict[str, Any]:
+    """Aggregate-only scores (no replies or inputs) that are safe to commit and publish."""
+    s = get_settings()
+    summary: dict[str, Any] = {
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "app_model": s.llm_model, "judge_model": judge,
+        "embeddings_model": s.embeddings_model,
+    }
+    if "routing_live" in report:
+        r = report["routing_live"]
+        summary["routing"] = {"accuracy": r["accuracy"], "total": r["total"],
+                              "by_category": r["by_category"]}
+    if "safety" in report:
+        summary["deepeval"] = {k.removesuffix(" [GEval]"): v
+                               for k, v in report["safety"]["summary"].items()}
+    if "rag" in report:
+        summary["ragas"] = {**report["rag"]["scores"], "n": report["rag"]["n"]}
+    SUMMARY.parent.mkdir(exist_ok=True)
+    SUMMARY.write_text(json.dumps(summary, indent=2) + "\n")
+    return summary
+
+
 def offline_agent() -> CompanionAgent:
     """Real guardrails + KB, stub LLM: routing doesn't depend on generation."""
     s = get_settings()
@@ -126,6 +174,7 @@ def main() -> None:
     parser.add_argument("--langsmith", action="store_true", help="Upload datasets to LangSmith")
     args = parser.parse_args()
     get_settings()  # loads .env into os.environ before DeepEval/RAGAS read keys
+    os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
 
     if args.langsmith:
         upload_langsmith_datasets()
@@ -135,9 +184,11 @@ def main() -> None:
         "safety": lambda: run_safety(real_agent(), args.judge),
         "rag": lambda: run_rag(real_agent(), args.judge),
     }
-    selected = list(suites) if args.suite == "all" else [args.suite]
+    selected = ["routing_live", "safety", "rag"] if args.suite == "all" else [args.suite]
     report = {name: suites[name]() for name in selected}
 
+    if args.suite in ("all", "routing_live", "safety", "rag"):
+        write_summary(report, args.judge)
     REPORTS.mkdir(exist_ok=True)
     out = REPORTS / f"eval-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json"
     out.write_text(json.dumps(report, indent=2, default=str))

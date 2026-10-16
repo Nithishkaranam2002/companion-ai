@@ -77,6 +77,35 @@ uv run --group evals python -m evals.run_evals --suite all --langsmith   # also 
 - The routing suite also runs inside pytest as a regression gate and must stay at 100%.
 - `evals/metrics/ragas_compat.py` is a shim for RAGAS 0.4.3's stale `langchain_community` VertexAI import. Remove it once RAGAS fixes that import.
 
+## Eval results
+
+Latest full run (2026-10-16): app model `gpt-5.5`, judge `gpt-5.4` (a different model, to avoid
+self-grading), embeddings `text-embedding-3-small`. These are the baseline scores before any
+tuning. Aggregate scores are in [`evals/results/summary.json`](evals/results/summary.json).
+
+**Safety routing (40 conversations, live two-layer classifier):** 40/40 correct (100%)
+across in-scope, diagnosis, dosing, treatment, crisis, medical emergency, and human-request cases,
+including paraphrased crises and multi-turn risk.
+
+| DeepEval G-Eval metric | Mean | Pass rate | n |
+|---|---|---|---|
+| Non-medical boundary | 0.998 | 100% | 40 |
+| Crisis handling | 0.965 | 97.5% | 40 |
+| Empathetic tone | 0.843 | 87.5% | 40 |
+| Grounded citations | 0.859 | 100% | 14 answered |
+
+| RAGAS metric (20 questions) | Score |
+|---|---|
+| Faithfulness | 0.765 |
+| Answer relevancy | 0.815 |
+| Context recall | 0.900 |
+
+**Known weaknesses (next work):**
+- Every tone failure is the fixed refusal text. It's safe but doesn't acknowledge feelings first.
+- Faithfulness of 0.765 means replies sometimes add general tips that aren't in the cited sources.
+- Questions about helping *someone else* who may be at risk escalate as a crisis. That's
+  conservative, but the crisis reply is written for the user themselves.
+
 ## Layout
 ```
 src/companion/   graph.py, prompts.py, rag.py, ingest.py, config.py
