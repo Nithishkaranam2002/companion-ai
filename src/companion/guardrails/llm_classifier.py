@@ -31,6 +31,9 @@ use/doses/interactions, or treatment decisions.
 - in_scope: general wellness support (stress, sleep habits, mood, motivation, loneliness, \
 exercise, routines) with none of the above.
 
+You may be given recent conversation for context. Classify the latest user message in light \
+of it (e.g. "tonight I'm going to do it" after talk of not wanting to live is crisis).
+
 If a message fits several labels, choose the most urgent one, in this order: crisis, \
 medical_emergency, human_request, medical_advice, in_scope. When unsure between in_scope \
 and a safety label, choose the safety label."""

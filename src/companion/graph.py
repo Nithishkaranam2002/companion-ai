@@ -49,6 +49,18 @@ def _to_messages(history: list[Turn]) -> list[BaseMessage]:
             for t in history]
 
 
+CLASSIFIER_CONTEXT_TURNS = 6
+
+
+def with_context(message: str, history: list[Turn]) -> str:
+    """Recent turns + latest message, so risk that builds across turns is visible."""
+    recent = history[-CLASSIFIER_CONTEXT_TURNS:]
+    if not recent:
+        return message
+    lines = "\n".join(f"{t['role']}: {t['content']}" for t in recent)
+    return f"Recent conversation:\n{lines}\n\nLatest user message to classify:\n{message}"
+
+
 def build_graph(llm: BaseChatModel, kb: KnowledgeBase, data_dir: Path,
                 classifier: Classifier | None = None) -> CompiledStateGraph:
     """`classifier` is the optional LLM safety layer; without it routing is regex-only."""
@@ -56,7 +68,8 @@ def build_graph(llm: BaseChatModel, kb: KnowledgeBase, data_dir: Path,
     def classify(state: CompanionState) -> CompanionState:
         label = classify_scope(state["message"])
         if classifier is not None:
-            label = most_severe(label, safe_classify(classifier, state["message"], label))
+            text = with_context(state["message"], state.get("history", []))
+            label = most_severe(label, safe_classify(classifier, text, label))
         return {"label": label, "route": route_for(label)}
 
     def escalate(state: CompanionState) -> CompanionState:

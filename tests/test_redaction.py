@@ -17,3 +17,8 @@ def test_presidio_redacts_names_and_places() -> None:
 
 def test_redaction_keeps_wellness_content() -> None:
     assert "anxious" in redact("I feel anxious about tomorrow.")
+
+
+def test_relative_times_survive_for_safety_routing() -> None:
+    out = redact("Tonight I'm going to do it. DOB: 01/02/1990")
+    assert out.startswith("Tonight") and "01/02/1990" not in out

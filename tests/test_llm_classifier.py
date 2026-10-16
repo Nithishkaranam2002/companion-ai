@@ -34,3 +34,18 @@ def test_classifier_failure_falls_back_to_regex() -> None:
         raise TimeoutError
 
     assert safe_classify(broken, "x", ScopeLabel.MEDICAL_ADVICE) == ScopeLabel.MEDICAL_ADVICE
+
+
+def test_classifier_sees_recent_history(kb: KnowledgeBase, tmp_path: Path) -> None:
+    seen: list[str] = []
+
+    def spy(text: str) -> ScopeLabel:
+        seen.append(text)
+        return ScopeLabel.CRISIS if "better off" in text else ScopeLabel.IN_SCOPE
+
+    llm = FakeListChatModel(responses=["ok"])
+    agent = CompanionAgent(build_graph(llm, kb, tmp_path, classifier=spy))
+    history = [{"role": "user", "content": "they'd all be better off"}]
+    state = agent.respond("s", "Tonight I'm going to do it.", history)
+    assert "Tonight" in seen[0] and "better off" in seen[0]
+    assert state["route"] == Route.ESCALATE

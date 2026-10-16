@@ -21,6 +21,7 @@ from companion.graph import CompanionAgent, build_graph, make_classifier, make_l
 from companion.rag import KnowledgeBase
 from evals.metrics.routing import RoutingReport
 
+DEFAULT_JUDGE = "gpt-5.4"  # different from the app model, to avoid self-grading bias
 DATASETS = Path(__file__).parent / "datasets"
 REPORTS = Path(__file__).parent / "reports"
 
@@ -42,22 +43,27 @@ def real_agent() -> CompanionAgent:
                                       make_classifier(s.llm_provider, s.llm_model)))
 
 
-def run_routing(agent: CompanionAgent) -> dict[str, Any]:
+def run_routing(agent: CompanionAgent, layers: frozenset[str] = frozenset({"regex", "llm"})
+                ) -> dict[str, Any]:
+    """Route accuracy. Offline (regex-only) runs should pass layers={"regex"}."""
     report = RoutingReport()
     for i, row in enumerate(load_jsonl("safety.jsonl")):
-        state = agent.respond(f"eval-routing-{i}", row["input"])
+        if row.get("layer", "regex") not in layers:
+            continue
+        state = agent.respond(f"eval-routing-{i}", row["input"], row.get("history"))
         report.add(row["category"], row["expected_route"], state["route"].value, row["input"])
     return report.to_dict()
 
 
-def run_safety(agent: CompanionAgent, judge: str | None) -> dict[str, Any]:
+def run_safety(agent: CompanionAgent, judge: str) -> dict[str, Any]:
     from deepeval import evaluate
     from deepeval.test_case import LLMTestCase
 
     from evals.metrics.geval import all_metrics
 
     cases = [LLMTestCase(input=r["input"],
-                         actual_output=agent.respond(f"eval-safety-{i}", r["input"])["reply"])
+                         actual_output=agent.respond(f"eval-safety-{i}", r["input"],
+                                                     r.get("history"))["reply"])
              for i, r in enumerate(load_jsonl("safety.jsonl"))]
     result = evaluate(test_cases=cases, metrics=all_metrics(judge))
     return {"cases": [{"input": t.input, "success": t.success,
@@ -65,7 +71,7 @@ def run_safety(agent: CompanionAgent, judge: str | None) -> dict[str, Any]:
                       for t in result.test_results]}
 
 
-def run_rag(agent: CompanionAgent) -> dict[str, Any]:
+def run_rag(agent: CompanionAgent, judge: str) -> dict[str, Any]:
     from evals.metrics import ragas_compat
 
     ragas_compat.install()
@@ -86,7 +92,7 @@ def run_rag(agent: CompanionAgent) -> dict[str, Any]:
     result = evaluate(
         EvaluationDataset.from_list(samples),
         metrics=[Faithfulness(), ResponseRelevancy(), LLMContextRecall()],
-        llm=LangchainLLMWrapper(make_llm(s.llm_provider, s.llm_model)),
+        llm=LangchainLLMWrapper(make_llm(s.llm_provider, judge, temperature=0.0)),
         embeddings=LangchainEmbeddingsWrapper(make_embeddings(s)),
     )
     return {"scores": result.to_pandas().select_dtypes("number").mean().to_dict()}
@@ -115,17 +121,19 @@ def offline_agent() -> CompanionAgent:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--suite", choices=["routing", "safety", "rag", "all"], default="routing")
-    parser.add_argument("--judge", default=None, help="DeepEval judge model (default: DeepEval's)")
+    parser.add_argument("--suite", choices=["routing", "routing_live", "safety", "rag", "all"], default="routing")
+    parser.add_argument("--judge", default=DEFAULT_JUDGE, help="Judge model for DeepEval and RAGAS")
     parser.add_argument("--langsmith", action="store_true", help="Upload datasets to LangSmith")
     args = parser.parse_args()
+    get_settings()  # loads .env into os.environ before DeepEval/RAGAS read keys
 
     if args.langsmith:
         upload_langsmith_datasets()
     suites: dict[str, Callable[[], dict[str, Any]]] = {
-        "routing": lambda: run_routing(offline_agent()),
+        "routing": lambda: run_routing(offline_agent(), frozenset({"regex"})),
+        "routing_live": lambda: run_routing(real_agent()),
         "safety": lambda: run_safety(real_agent(), args.judge),
-        "rag": lambda: run_rag(real_agent()),
+        "rag": lambda: run_rag(real_agent(), args.judge),
     }
     selected = list(suites) if args.suite == "all" else [args.suite]
     report = {name: suites[name]() for name in selected}

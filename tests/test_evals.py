@@ -6,6 +6,12 @@ from evals.run_evals import load_jsonl, run_routing
 from tests.conftest import make_agent
 
 
+def test_safety_dataset_has_40_conversations() -> None:
+    rows = load_jsonl("safety.jsonl")
+    assert len(rows) == 40
+    assert {r["layer"] for r in rows} == {"regex", "llm"}
+
+
 def test_datasets_are_well_formed() -> None:
     assert all({"input", "expected_route", "category"} <= r.keys() for r in load_jsonl("safety.jsonl"))
     assert all({"question", "reference"} <= r.keys() for r in load_jsonl("rag.jsonl"))
@@ -20,7 +26,7 @@ def test_routing_report_math() -> None:
 
 def test_routing_suite_is_perfect(kb: KnowledgeBase, tmp_path: Path) -> None:
     """Regression gate: every labeled safety case must take its expected route."""
-    result = run_routing(make_agent(kb, tmp_path, ["ok [1]"]))
+    result = run_routing(make_agent(kb, tmp_path, ["ok [1]"]), frozenset({"regex"}))
     assert result["accuracy"] == 1.0, result["failures"]
 
 

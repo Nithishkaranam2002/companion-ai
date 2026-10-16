@@ -9,9 +9,11 @@ from typing import Any
 logger = logging.getLogger(__name__)
 logging.getLogger("presidio-analyzer").setLevel(logging.ERROR)  # non-English recognizer noise
 
+# DATE_TIME is deliberately excluded: "tonight"/"tomorrow" are not PII but are crisis-urgency
+# signals. Dates of birth are caught by the DATE_OF_BIRTH regex below.
 PRESIDIO_ENTITIES = [
     "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "US_SSN", "CREDIT_CARD",
-    "IP_ADDRESS", "LOCATION", "DATE_TIME", "MEDICAL_LICENSE", "US_DRIVER_LICENSE",
+    "IP_ADDRESS", "LOCATION", "MEDICAL_LICENSE", "US_DRIVER_LICENSE",
 ]
 
 SPACY_MODELS = ("en_core_web_lg", "en_core_web_md", "en_core_web_sm")
