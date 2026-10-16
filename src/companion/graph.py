@@ -13,6 +13,12 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from companion.guardrails.llm_classifier import (
+    Classifier,
+    make_llm_classifier,
+    most_severe,
+    safe_classify,
+)
 from companion.guardrails.output_check import violates_medical_line
 from companion.guardrails.policy import RESPONSES, Route, route_for
 from companion.guardrails.redaction import redact
@@ -43,9 +49,14 @@ def _to_messages(history: list[Turn]) -> list[BaseMessage]:
             for t in history]
 
 
-def build_graph(llm: BaseChatModel, kb: KnowledgeBase, data_dir: Path) -> CompiledStateGraph:
+def build_graph(llm: BaseChatModel, kb: KnowledgeBase, data_dir: Path,
+                classifier: Classifier | None = None) -> CompiledStateGraph:
+    """`classifier` is the optional LLM safety layer; without it routing is regex-only."""
+
     def classify(state: CompanionState) -> CompanionState:
         label = classify_scope(state["message"])
+        if classifier is not None:
+            label = most_severe(label, safe_classify(classifier, state["message"], label))
         return {"label": label, "route": route_for(label)}
 
     def escalate(state: CompanionState) -> CompanionState:
@@ -111,7 +122,11 @@ class CompanionAgent:
         })
 
 
-def make_llm(provider: str, model: str) -> BaseChatModel:
+def make_llm(provider: str, model: str, temperature: float = 0.3) -> BaseChatModel:
     from langchain.chat_models import init_chat_model
 
-    return init_chat_model(model, model_provider=provider, temperature=0.3)
+    return init_chat_model(model, model_provider=provider, temperature=temperature)
+
+
+def make_classifier(provider: str, model: str) -> Classifier:
+    return make_llm_classifier(make_llm(provider, model, temperature=0.0))

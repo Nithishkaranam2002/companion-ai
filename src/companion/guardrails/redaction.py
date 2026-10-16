@@ -7,6 +7,7 @@ from functools import lru_cache
 from typing import Any
 
 logger = logging.getLogger(__name__)
+logging.getLogger("presidio-analyzer").setLevel(logging.ERROR)  # non-English recognizer noise
 
 PRESIDIO_ENTITIES = [
     "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "US_SSN", "CREDIT_CARD",

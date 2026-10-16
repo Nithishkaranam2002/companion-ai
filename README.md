@@ -7,14 +7,17 @@ hands off to a human for crises, self-harm, medical emergencies, or when someone
 ## How a message flows
 
 ```
-user text ──► redact (Presidio + regex) ──► classify scope
+user text ──► redact (Presidio + regex) ──► classify scope (regex + LLM, most severe wins)
                                               ├─ crisis / emergency / human request ─► escalate (ticket + resources)
                                               ├─ diagnosis / dosing / treatment ─────► refuse (fixed policy text)
                                               └─ in scope ─► retrieve (Chroma) ─► generate (LLM, cites [n]) ─► output check
 ```
 
 - **Redaction happens before the graph runs**, so raw PII never enters graph state, logs, or LangSmith traces.
-- Routing is **rule-based on purpose**: safety routing has to be deterministic and testable.
+- Routing is **two-layer**: a deterministic regex classifier plus an LLM safety classifier
+  (`guardrails/llm_classifier.py`). The more severe label wins, so the LLM can escalate a
+  paraphrase the regex misses ("I don't see the point anymore") but can never downgrade a regex hit.
+  If the LLM call fails, routing falls back to the regex label.
   Precedence: crisis > medical emergency > human request > medical advice.
 - **Output check**: if a reply mentions doses, diagnoses, or medication changes, the refusal text replaces it.
 - Escalation and refusal replies are fixed text and never come from the LLM.

@@ -7,6 +7,9 @@ from companion.guardrails.scope import ScopeLabel, classify_scope
 @pytest.mark.parametrize("text,label", [
     ("I want to kill myself", ScopeLabel.CRISIS),
     ("I keep cutting myself", ScopeLabel.CRISIS),
+    ("I've been thinking about ending my life", ScopeLabel.CRISIS),
+    ("I want to take my own life", ScopeLabel.CRISIS),
+    ("I don't want to wake up tomorrow", ScopeLabel.CRISIS),
     ("I have been hurting myself", ScopeLabel.CRISIS),
     ("I've been thinking about suicide", ScopeLabel.CRISIS),
     ("everyone would be better off without me", ScopeLabel.CRISIS),

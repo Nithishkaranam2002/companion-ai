@@ -17,7 +17,7 @@ from typing import Any
 from langchain_core.language_models import FakeListChatModel
 
 from companion.config import get_settings
-from companion.graph import CompanionAgent, build_graph, make_llm
+from companion.graph import CompanionAgent, build_graph, make_classifier, make_llm
 from companion.rag import KnowledgeBase
 from evals.metrics.routing import RoutingReport
 
@@ -38,7 +38,8 @@ def eval_data_dir() -> Path:
 def real_agent() -> CompanionAgent:
     s = get_settings()
     return CompanionAgent(build_graph(make_llm(s.llm_provider, s.llm_model),
-                                      KnowledgeBase.from_settings(s), eval_data_dir()))
+                                      KnowledgeBase.from_settings(s), eval_data_dir(),
+                                      make_classifier(s.llm_provider, s.llm_model)))
 
 
 def run_routing(agent: CompanionAgent) -> dict[str, Any]:

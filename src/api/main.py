@@ -8,10 +8,11 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
 
 from companion.config import get_settings, require_provider_keys
-from companion.graph import CompanionAgent, build_graph, make_llm
+from companion.graph import CompanionAgent, build_graph, make_classifier, make_llm
 from companion.rag import KnowledgeBase
 from companion.tools.mood import MoodEntry, log_mood, read_moods
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("companion.api")
 app = FastAPI(title="CompanionAI")
 
@@ -51,8 +52,9 @@ def get_agent() -> CompanionAgent:
     settings = get_settings()
     require_provider_keys(settings)
     llm = make_llm(settings.llm_provider, settings.llm_model)
+    classifier = make_classifier(settings.llm_provider, settings.llm_model)
     return CompanionAgent(build_graph(llm, KnowledgeBase.from_settings(settings),
-                                      settings.data_dir))
+                                      settings.data_dir, classifier))
 
 
 @app.get("/health")

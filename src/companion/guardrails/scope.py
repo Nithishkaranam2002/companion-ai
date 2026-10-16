@@ -24,7 +24,8 @@ _RULES: list[tuple[ScopeLabel, re.Pattern[str]]] = [
     (ScopeLabel.CRISIS, _rx(
         r"\b(kill|hurt|harm|cut|starv)\w* myself\b",
         r"\bsuicid(e|al)\b",
-        r"\bend (my|it all|my life)\b",
+        r"\b(end|ending|take|taking) (it all|my (own )?life)\b",
+        r"\b(don'?t|do not) (want to|wanna) (be alive|live|wake up)\b",
         r"\b(want|wanna) to die\b",
         r"\bno reason to (live|go on)\b",
         r"\bbetter off (dead|without me)\b",
