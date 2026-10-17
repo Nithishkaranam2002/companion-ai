@@ -2,7 +2,7 @@
 // Needs SUPABASE_SERVICE_ROLE_KEY locally; skipped when it's absent.
 import type { Page, Route } from "@playwright/test";
 
-import { createTestUser, deleteTestUser, signIn } from "./auth-helper";
+import { captureAnonymousUser, cleanupUsers, createTestUser, deleteLater, deleteTestUser, signIn } from "./auth-helper";
 import { authedTest, expect, test } from "./fixtures";
 
 const API = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -212,10 +212,14 @@ test("account menu signs out", async ({ page, baseURL }) => {
   }
 });
 
+test.afterEach(cleanupUsers);
+
 test("demo button starts a demo or explains why it can't", async ({ page }) => {
   await page.goto("/");
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) void captureAnonymousUser(page).then(deleteLater, () => {});
   await page.getByRole("button", { name: "Try it free — no sign-up" }).click();
   await expect(
     page.getByText("The demo isn't available right now").or(page.getByRole("heading", { name: "How are you, really?" })),
   ).toBeVisible({ timeout: 15_000 });
+  await page.waitForLoadState("networkidle"); // let the sign-up response register for cleanup
 });

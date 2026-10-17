@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 echo "== python: ruff + pytest"
 uv run ruff check .
-uv run pytest -q
+uv run --all-groups --exact --frozen pytest -q  # same packages as CI: no leftovers
 echo "== web: lint + typecheck + build"
 (cd web && npm run lint && npm run typecheck && npm run build >/dev/null)
 echo "== secret scan of files to be committed"

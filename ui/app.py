@@ -1,17 +1,53 @@
-"""Streamlit UI. Run: uv run --group ui streamlit run ui/app.py"""
+"""Streamlit dev console: the full guardrail graph in-process, no API or login needed.
 
-import os
+Run: uv run --group ui streamlit run ui/app.py
+Tickets and moods go to an in-memory store, so local testing never touches the production queue.
+The production web app lives in web/ and talks to the FastAPI service.
+"""
+
 import uuid
 
-import httpx
 import streamlit as st
 
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+from companion.config import get_settings, require_provider_keys
+from companion.db.store import InMemoryStore, Store
+from companion.graph import (
+    CompanionAgent,
+    CompanionState,
+    build_graph,
+    make_ack,
+    make_classifier,
+    make_llm,
+)
+from companion.rag import KnowledgeBase
+from companion.tools.mood import log_mood
 
-st.set_page_config(page_title="CompanionAI", page_icon="🌿")
+DEV_USER = "streamlit-dev"
+
+
+@st.cache_resource
+def store() -> Store:
+    return InMemoryStore()
+
+
+@st.cache_resource
+def agent() -> CompanionAgent:
+    settings = get_settings()
+    require_provider_keys(settings)
+    kb = KnowledgeBase.from_settings(settings)
+    kb.ingest(settings.kb_dir)  # only new or edited chunks are embedded
+
+    def escalate(state: CompanionState, reason: str, summary: str) -> str:
+        return store().create_escalation(None, None, reason, summary).id
+
+    model = (settings.llm_provider, settings.llm_model)
+    return CompanionAgent(build_graph(make_llm(*model), kb, escalate, make_classifier(*model),
+                                      make_ack(*model)))
+
+
+st.set_page_config(page_title="CompanionAI console", page_icon="🌿")
 st.title("CompanionAI")
-st.caption("A supportive wellness companion. Not a medical provider. "
-           "In an emergency, call your local emergency number (US: 911, crisis line: 988).")
+st.caption("Not a medical service. In crisis, call or text 988.")
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = uuid.uuid4().hex
@@ -22,9 +58,8 @@ with st.sidebar:
     score = st.slider("How are you feeling?", 1, 10, 5)
     note = st.text_input("Note (optional)")
     if st.button("Log mood"):
-        httpx.post(f"{API_URL}/mood", json={"user_id": st.session_state.session_id,
-                                            "score": score, "note": note}, timeout=10)
-        st.success("Logged")
+        entry = log_mood(store(), DEV_USER, score, note)
+        st.success(f"Logged {entry.score}/10" + (f": {entry.note}" if entry.note else ""))
 
 for turn in st.session_state.history:
     with st.chat_message(turn["role"]):
@@ -33,17 +68,16 @@ for turn in st.session_state.history:
 if prompt := st.chat_input("What's on your mind?"):
     with st.chat_message("user"):
         st.markdown(prompt)
-    resp = httpx.post(f"{API_URL}/chat", timeout=60, json={
-        "session_id": st.session_state.session_id,
-        "message": prompt,
-        "history": st.session_state.history,
-    }).json()
+    with st.spinner("Thinking…"):
+        result = agent().respond(st.session_state.session_id, prompt, st.session_state.history)
     with st.chat_message("assistant"):
-        st.markdown(resp["reply"])
-        if resp["escalated"]:
+        st.markdown(result["reply"])
+        st.caption(f"route: {result['route'].value} · label: {result['label'].value}")
+        if result.get("ticket_id"):
             st.warning("A human on our team has been notified.")
-        if resp["sources"]:
-            st.markdown("**Sources**\n" + "\n".join(f"- [{s['title']}]({s['url']})"
-                                                    for s in resp["sources"]))
-    st.session_state.history += [{"role": "user", "content": prompt},
-                                 {"role": "assistant", "content": resp["reply"]}]
+        if result.get("sources"):
+            st.markdown("**Sources**\n" + "\n".join(
+                f"{i}. [{s['title']}]({s['url']})" for i, s in enumerate(result["sources"], 1)))
+    # History holds the redacted message, matching what the API stores.
+    st.session_state.history += [{"role": "user", "content": result["message"]},
+                                 {"role": "assistant", "content": result["reply"]}]

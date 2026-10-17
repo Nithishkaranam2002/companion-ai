@@ -13,9 +13,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.7.22"
-      - run: uv sync --group dev --frozen
+      - run: uv sync --all-groups --frozen
       - run: uv run ruff check .
-      - run: uv run pytest -q
+      - run: uv run --all-groups --frozen pytest -q
 
   web:
     runs-on: ubuntu-latest

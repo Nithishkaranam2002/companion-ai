@@ -36,6 +36,7 @@ test.describe("@live mood and admin", () => {
   });
 
   test("admin sees and resolves an escalation ticket", async ({ page, baseURL }) => {
+    test.skip(Boolean(process.env.E2E_BASE_URL), "needs a local API with the e2e admin email");
     const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
       auth: { persistSession: false },
     });

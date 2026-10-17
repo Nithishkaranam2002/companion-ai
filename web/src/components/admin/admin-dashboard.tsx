@@ -155,7 +155,7 @@ export function AdminDashboard() {
             {urgentOpen > 0 ? (
               <p className="mt-4 flex items-center gap-2 rounded-xl bg-crisis-muted px-4 py-3 text-sm">
                 <AlertTriangle className="size-4 text-crisis" aria-hidden="true" />
-                {urgentOpen} urgent ticket{urgentOpen === 1 ? "" : "s"} need follow-up. Messages are redacted; contact details are not stored.
+                {urgentOpen === 1 ? "1 urgent ticket needs" : `${urgentOpen} urgent tickets need`} follow-up. Messages are redacted; contact details are not stored.
               </p>
             ) : null}
 

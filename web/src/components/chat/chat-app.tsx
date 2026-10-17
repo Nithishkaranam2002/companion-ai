@@ -137,6 +137,9 @@ export function ChatApp() {
             if (ev.data.conversation_id && ev.data.conversation_id !== activeId) {
               setCreatedHere(ev.data.conversation_id);
               setActiveId(ev.data.conversation_id);
+              // Show it in the sidebar now; the refresh after the reply brings the server's (redacted) title.
+              const created = { id: ev.data.conversation_id, title: text.slice(0, 60), updated_at: new Date().toISOString() };
+              setConversations((cs) => [created, ...cs.filter((c) => c.id !== created.id)]);
               window.history.replaceState(null, "", `/chat/${ev.data.conversation_id}`);
             }
             if (ev.data.route === "escalate") setBannerDismissed(false);

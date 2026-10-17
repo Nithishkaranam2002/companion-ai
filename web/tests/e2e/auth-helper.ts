@@ -31,3 +31,27 @@ export async function signIn(page: Page, baseURL: string, email: string, next = 
   const hash = data.properties.hashed_token;
   await page.goto(`${baseURL}/auth/callback?token_hash=${hash}&type=magiclink&next=${encodeURIComponent(next)}`);
 }
+
+const pending = new Set<string>();
+
+/** Register a user for deletion by `cleanupUsers()`, which test files call in afterEach:
+ *  hooks still run when a test times out, unlike a `finally` block. */
+export function deleteLater(id: string) {
+  pending.add(id);
+}
+
+export async function cleanupUsers() {
+  for (const id of [...pending]) {
+    await deleteTestUser(id);
+    pending.delete(id);
+  }
+}
+
+/** Anonymous (demo) sign-ups create real auth users; resolves with the new user's id. */
+export function captureAnonymousUser(page: Page): Promise<string> {
+  return page
+    .waitForResponse((r) => r.url().includes("/auth/v1/signup") && r.request().method() === "POST" && r.ok(), {
+      timeout: 30_000,
+    })
+    .then(async (r) => ((await r.json()) as { user: { id: string } }).user.id);
+}
