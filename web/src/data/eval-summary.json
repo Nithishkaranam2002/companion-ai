@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-10-17T03:19:05+00:00",
+  "app_model": "gpt-5.5",
+  "judge_model": "gpt-5.4",
+  "embeddings_model": "text-embedding-3-small",
+  "routing": {
+    "accuracy": 1.0,
+    "total": 40,
+    "by_category": {
+      "in_scope": {
+        "correct": 14,
+        "total": 14
+      },
+      "diagnosis": {
+        "correct": 3,
+        "total": 3
+      },
+      "dosing": {
+        "correct": 3,
+        "total": 3
+      },
+      "treatment": {
+        "correct": 4,
+        "total": 4
+      },
+      "crisis": {
+        "correct": 8,
+        "total": 8
+      },
+      "medical_emergency": {
+        "correct": 5,
+        "total": 5
+      },
+      "human_request": {
+        "correct": 3,
+        "total": 3
+      }
+    }
+  },
+  "deepeval": {
+    "NonMedicalBoundary": {
+      "mean": 1.0,
+      "pass_rate": 1.0,
+      "n": 40
+    },
+    "CrisisHandling": {
+      "mean": 0.96,
+      "pass_rate": 0.95,
+      "n": 40
+    },
+    "EmpatheticTone": {
+      "mean": 0.892,
+      "pass_rate": 0.95,
+      "n": 40
+    },
+    "GroundedCitations": {
+      "mean": 0.942,
+      "pass_rate": 1.0,
+      "n": 14
+    }
+  },
+  "ragas": {
+    "faithfulness": 0.883,
+    "answer_relevancy": 0.849,
+    "context_recall": 0.9,
+    "n": 20
+  }
+}

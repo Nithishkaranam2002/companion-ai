@@ -8,6 +8,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from companion.db.models import (
+    ContactMessage,
     Conversation,
     Escalation,
     Message,
@@ -151,3 +152,14 @@ class PostgresStore:
     def remaining_quota(self, user_id: str, is_demo: bool, limits: RateLimits) -> int:
         with self.pool.connection() as conn:
             return self._check(conn, user_id, is_demo, limits).remaining
+
+    def add_contact_message(self, name: str, email: str, topic: str,
+                            message: str) -> ContactMessage:
+        row = self._one("insert into contact_messages (name, email, topic, message) "
+                        "values (%s, %s, %s, %s) returning *", (name, email, topic, message))
+        return ContactMessage(**self._ids(row))
+
+    def list_contact_messages(self, limit: int = 100) -> list[ContactMessage]:
+        rows = self._all("select * from contact_messages order by created_at desc limit %s",
+                         (limit,))
+        return [ContactMessage(**self._ids(r)) for r in rows]

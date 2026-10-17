@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from companion.db.models import (
+    ContactMessage,
     Conversation,
     Escalation,
     Message,
@@ -36,6 +37,9 @@ class Store(Protocol):
     def consume_message_quota(self, user_id: str, is_demo: bool,
                               limits: RateLimits) -> RateDecision: ...
     def remaining_quota(self, user_id: str, is_demo: bool, limits: RateLimits) -> int: ...
+    def add_contact_message(self, name: str, email: str, topic: str,
+                            message: str) -> ContactMessage: ...
+    def list_contact_messages(self, limit: int = 100) -> list[ContactMessage]: ...
 
 
 def _now() -> datetime:
@@ -54,6 +58,7 @@ class InMemoryStore:
         self.moods: list[MoodEntry] = []
         self.escalations: dict[str, Escalation] = {}
         self.usage: list[tuple[str, bool, datetime]] = []
+        self.contacts: list[ContactMessage] = []
 
     def create_conversation(self, user_id: str, title: str) -> Conversation:
         now = _now()
@@ -148,3 +153,13 @@ class InMemoryStore:
 
     def remaining_quota(self, user_id: str, is_demo: bool, limits: RateLimits) -> int:
         return self._check(user_id, is_demo, limits).remaining
+
+    def add_contact_message(self, name: str, email: str, topic: str,
+                            message: str) -> ContactMessage:
+        msg = ContactMessage(id=_id(), name=name, email=email, topic=topic, message=message,
+                             created_at=_now())
+        self.contacts.append(msg)
+        return msg
+
+    def list_contact_messages(self, limit: int = 100) -> list[ContactMessage]:
+        return sorted(self.contacts, key=lambda c: c.created_at, reverse=True)[:limit]

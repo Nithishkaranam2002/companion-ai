@@ -157,3 +157,29 @@ def test_cors_allows_configured_origin(client: TestClient) -> None:
 
 def test_safety_summary(client: TestClient) -> None:
     assert client.get("/safety/summary").json()["routing"]["total"] == 40
+
+
+@pytest.fixture(autouse=True)
+def fresh_contact_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    from api.main import IpRateLimiter
+
+    monkeypatch.setattr("api.main.contact_limiter", IpRateLimiter(limit=5, window_s=3600))
+
+
+def test_contact_rate_limited_per_ip(client: TestClient) -> None:
+    body = {"name": "Ada", "email": "ada@example.com", "message": "Hello there, team!"}
+    codes = [client.post("/contact", json=body).status_code for _ in range(6)]
+    assert codes == [202] * 5 + [429]
+
+
+def test_contact_form(client: TestClient, store: InMemoryStore) -> None:
+    body = {"name": "Ada", "email": "ada@example.com", "topic": "pro",
+            "message": "Please add me to the waitlist."}
+    assert client.post("/contact", json=body).status_code == 202
+    assert store.contacts[0].topic == "pro"
+    assert client.post("/contact", json={**body, "email": "nope"}).status_code == 422
+    assert client.post("/contact", json={**body, "website": "spam.biz"}).status_code == 202
+    assert len(store.contacts) == 1  # honeypot submission dropped
+    boss = auth(sub="admin", email="boss@example.com")
+    assert client.get("/admin/contact", headers=auth()).status_code == 403
+    assert client.get("/admin/contact", headers=boss).json()[0]["email"] == "ada@example.com"

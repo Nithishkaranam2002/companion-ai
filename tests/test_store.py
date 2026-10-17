@@ -101,3 +101,12 @@ def test_demo_global_cap() -> None:
     assert store.consume_message_quota("a", True, limits).allowed
     assert store.consume_message_quota("b", True, limits).allowed
     assert store.consume_message_quota("c", True, limits).reason == "demo_global"
+
+
+def test_contact_messages(store_and_user: tuple[Store, str]) -> None:
+    store, _ = store_and_user
+    msg = store.add_contact_message("Ada", "ada@example.com", "general", "hello there team")
+    assert msg.id in {m.id for m in store.list_contact_messages()}
+    if hasattr(store, "pool"):
+        with store.pool.connection() as conn:  # type: ignore[attr-defined]
+            conn.execute("delete from contact_messages where id = %s", (msg.id,))

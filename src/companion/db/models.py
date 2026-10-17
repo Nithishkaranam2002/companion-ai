@@ -47,6 +47,16 @@ class Escalation(BaseModel):
     created_at: datetime
 
 
+class ContactMessage(BaseModel):
+    id: str
+    name: str
+    email: str
+    topic: str
+    message: str
+    handled: bool = False
+    created_at: datetime
+
+
 @dataclass(frozen=True)
 class RateLimits:
     user_per_hour: int = 20

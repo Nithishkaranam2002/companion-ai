@@ -2,21 +2,24 @@
 
 import json
 import logging
+import threading
+import time
+from collections import deque
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from api.auth import User, admin_user, current_user, signed_in_user
 from companion.config import get_settings, require_provider_keys
 from companion.db.factory import get_store
-from companion.db.models import Conversation, Escalation, Message, MoodEntry
+from companion.db.models import ContactMessage, Conversation, Escalation, Message, MoodEntry
 from companion.db.store import Store
 from companion.graph import (
     CompanionAgent,
@@ -99,6 +102,14 @@ class ChatRequest(BaseModel):
 class MoodRequest(BaseModel):
     score: int = Field(ge=1, le=10)
     note: str = Field("", max_length=1000)
+
+
+class ContactRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: EmailStr
+    topic: Literal["general", "pro", "clinic", "privacy", "safety"] = "general"
+    message: str = Field(min_length=10, max_length=4000)
+    website: str = ""  # honeypot: real people leave it empty
 
 
 class MeResponse(BaseModel):
@@ -267,3 +278,44 @@ def admin_resolve(escalation_id: str, admin: Annotated[User, Depends(admin_user)
 @app.get("/safety/summary")
 def safety_summary() -> dict[str, Any]:
     return json.loads(SUMMARY_PATH.read_text()) if SUMMARY_PATH.exists() else {}
+
+
+class IpRateLimiter:
+    """Small in-process sliding-window limiter (single API instance) for anonymous endpoints."""
+
+    def __init__(self, limit: int, window_s: float) -> None:
+        self.limit, self.window = limit, window_s
+        self._hits: dict[str, deque[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            hits = self._hits.setdefault(key, deque())
+            while hits and now - hits[0] > self.window:
+                hits.popleft()
+            if len(hits) >= self.limit:
+                return False
+            hits.append(now)
+            return True
+
+
+contact_limiter = IpRateLimiter(limit=5, window_s=3600)
+
+
+@app.post("/contact", status_code=status.HTTP_202_ACCEPTED)
+def contact(req: ContactRequest, request: Request, store: StoreDep) -> dict[str, bool]:
+    if not contact_limiter.allow(request.client.host if request.client else "unknown"):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            "Too many messages from your network. Please try again later.")
+    if req.website:  # bot; pretend success
+        return {"ok": True}
+    store.add_contact_message(req.name.strip(), str(req.email), req.topic, req.message.strip())
+    logger.info("contact message received topic=%s", req.topic)
+    return {"ok": True}
+
+
+@app.get("/admin/contact", response_model=list[ContactMessage])
+def admin_contact(_: Annotated[User, Depends(admin_user)],
+                  store: StoreDep) -> list[ContactMessage]:
+    return store.list_contact_messages()

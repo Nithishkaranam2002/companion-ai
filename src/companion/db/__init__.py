@@ -1,4 +1,5 @@
 from companion.db.models import (
+    ContactMessage,
     Conversation,
     Escalation,
     Message,
@@ -8,5 +9,5 @@ from companion.db.models import (
 )
 from companion.db.store import InMemoryStore, Store
 
-__all__ = ["Conversation", "Escalation", "InMemoryStore", "Message", "MoodEntry",
+__all__ = ["ContactMessage", "Conversation", "Escalation", "InMemoryStore", "Message", "MoodEntry",
            "RateDecision", "RateLimits", "Store"]
