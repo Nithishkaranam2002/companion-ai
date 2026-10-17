@@ -7,10 +7,10 @@ from dataclasses import asdict
 
 from mcp.server.mcpserver import MCPServer
 
-from companion.config import get_settings
+from companion.db.factory import get_store
 from companion.rag import KnowledgeBase
-from companion.tools.escalation import escalate_to_human as _escalate
-from companion.tools.mood import log_mood
+from companion.tools import escalate_to_human as _escalate
+from companion.tools import log_mood
 
 mcp = MCPServer(
     name="companion-ai",
@@ -27,13 +27,15 @@ def kb_search(query: str, k: int = 4) -> list[dict[str, str]]:
 @mcp.tool()
 def mood_log(user_id: str, score: int, note: str = "") -> dict[str, object]:
     """Log a mood score (1-10) with an optional note. The note is PII-redacted before storage."""
-    return log_mood(get_settings().data_dir, user_id, score, note).model_dump()
+    return log_mood(get_store(), user_id, score, note).model_dump(mode="json")
 
 
 @mcp.tool()
-def escalate_to_human(session_id: str, reason: str, summary: str) -> dict[str, object]:
-    """Hand the conversation to a human reviewer. Reason: crisis | medical_emergency | human_request."""
-    return _escalate(get_settings().data_dir, session_id, reason, summary).model_dump()
+def escalate_to_human(reason: str, summary: str,
+                      conversation_id: str | None = None) -> dict[str, object]:
+    """Hand a conversation to a human reviewer. Reason: crisis | medical_emergency | human_request."""
+    return _escalate(get_store(), reason, summary,
+                     conversation_id=conversation_id).model_dump(mode="json")
 
 
 if __name__ == "__main__":

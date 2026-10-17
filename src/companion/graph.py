@@ -4,8 +4,8 @@ Callers must pass already-redacted text (see `CompanionAgent.respond`), so nothi
 raw ever enters graph state or LangSmith traces.
 """
 
+from collections.abc import Callable
 from dataclasses import asdict
-from pathlib import Path
 from typing import TypedDict
 
 from langchain_core.language_models import BaseChatModel
@@ -25,7 +25,6 @@ from companion.guardrails.redaction import redact
 from companion.guardrails.scope import ScopeLabel, classify_scope
 from companion.prompts import ANSWER_TEMPLATE, SYSTEM_PROMPT
 from companion.rag import KnowledgeBase, Source, format_context
-from companion.tools.escalation import escalate_to_human
 
 
 class Turn(TypedDict):
@@ -33,8 +32,13 @@ class Turn(TypedDict):
     content: str
 
 
+# (state, reason, redacted summary) -> ticket id
+EscalateFn = Callable[["CompanionState", str, str], str]
+
+
 class CompanionState(TypedDict, total=False):
     session_id: str
+    user_id: str | None
     message: str
     history: list[Turn]
     label: ScopeLabel
@@ -61,7 +65,7 @@ def with_context(message: str, history: list[Turn]) -> str:
     return f"Recent conversation:\n{lines}\n\nLatest user message to classify:\n{message}"
 
 
-def build_graph(llm: BaseChatModel, kb: KnowledgeBase, data_dir: Path,
+def build_graph(llm: BaseChatModel, kb: KnowledgeBase, escalate_fn: EscalateFn,
                 classifier: Classifier | None = None) -> CompiledStateGraph:
     """`classifier` is the optional LLM safety layer; without it routing is regex-only."""
 
@@ -73,9 +77,8 @@ def build_graph(llm: BaseChatModel, kb: KnowledgeBase, data_dir: Path,
         return {"label": label, "route": route_for(label)}
 
     def escalate(state: CompanionState) -> CompanionState:
-        ticket = escalate_to_human(data_dir, state["session_id"], state["label"].value,
-                                   state["message"])
-        return {"reply": RESPONSES[state["label"]], "ticket_id": ticket.ticket_id, "sources": []}
+        ticket_id = escalate_fn(state, state["label"].value, state["message"])
+        return {"reply": RESPONSES[state["label"]], "ticket_id": ticket_id, "sources": []}
 
     def refuse(state: CompanionState) -> CompanionState:
         return {"reply": RESPONSES[state["label"]], "sources": []}
@@ -123,16 +126,20 @@ class CompanionAgent:
     def __init__(self, graph: CompiledStateGraph) -> None:
         self.graph = graph
 
-    def respond(self, session_id: str, message: str,
-                history: list[Turn] | None = None) -> CompanionState:
-        safe_history: list[Turn] = [{"role": t["role"], "content": redact(t["content"])}
-                                    for t in history or []]
-        return self.graph.invoke({
+    @staticmethod
+    def initial_state(session_id: str, message: str, history: list[Turn] | None,
+                      user_id: str | None = None) -> CompanionState:
+        return {
             "session_id": session_id,
+            "user_id": user_id,
             "message": redact(message),
-            "history": safe_history,
+            "history": [{"role": t["role"], "content": redact(t["content"])} for t in history or []],
             "ticket_id": None,
-        })
+        }
+
+    def respond(self, session_id: str, message: str, history: list[Turn] | None = None,
+                user_id: str | None = None) -> CompanionState:
+        return self.graph.invoke(self.initial_state(session_id, message, history, user_id))
 
 
 def make_llm(provider: str, model: str, temperature: float = 0.3) -> BaseChatModel:

@@ -6,14 +6,19 @@ severe of the two labels, so the LLM can only escalate, never downgrade.
 """
 
 import logging
+import warnings
 from collections.abc import Callable
 
 from langchain_core.language_models import BaseChatModel
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from companion.guardrails.scope import ScopeLabel
 
 logger = logging.getLogger(__name__)
+
+# langchain-openai's structured output trips a Pydantic serializer warning whose text
+# includes the parsed verdict. Never let model output about a user message reach logs.
+warnings.filterwarnings("ignore", message=r"Pydantic serializer warnings", category=UserWarning)
 
 Classifier = Callable[[str], ScopeLabel]
 
@@ -40,8 +45,8 @@ and a safety label, choose the safety label."""
 
 
 class SafetyVerdict(BaseModel):
+    # Label only: no free-text rationale, so nothing derived from the message can leak.
     label: ScopeLabel
-    reason: str = Field(description="One short phrase explaining the label.")
 
 
 SEVERITY = [ScopeLabel.CRISIS, ScopeLabel.MEDICAL_EMERGENCY, ScopeLabel.HUMAN_REQUEST,

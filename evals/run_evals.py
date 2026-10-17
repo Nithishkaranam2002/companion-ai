@@ -9,7 +9,6 @@
 import argparse
 import json
 import os
-import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +17,7 @@ from typing import Any
 from langchain_core.language_models import FakeListChatModel
 
 from companion.config import get_settings
+from companion.db.store import InMemoryStore
 from companion.graph import CompanionAgent, build_graph, make_classifier, make_llm
 from companion.rag import KnowledgeBase
 from evals.metrics.routing import RoutingReport
@@ -33,15 +33,16 @@ def load_jsonl(name: str) -> list[dict[str, str]]:
     return [json.loads(line) for line in lines if line.strip()]
 
 
-def eval_data_dir() -> Path:
-    """Scratch dir so eval runs never write tickets into the real escalation queue."""
-    return Path(tempfile.mkdtemp(prefix="companion-eval-"))
+def eval_escalate() -> Any:
+    """In-memory sink so eval runs never write tickets into the real escalation queue."""
+    store = InMemoryStore()
+    return lambda state, reason, summary: store.create_escalation(None, None, reason, summary).id
 
 
 def real_agent() -> CompanionAgent:
     s = get_settings()
     return CompanionAgent(build_graph(make_llm(s.llm_provider, s.llm_model),
-                                      KnowledgeBase.from_settings(s), eval_data_dir(),
+                                      KnowledgeBase.from_settings(s), eval_escalate(),
                                       make_classifier(s.llm_provider, s.llm_model)))
 
 
@@ -164,7 +165,7 @@ def offline_agent() -> CompanionAgent:
     """Real guardrails + KB, stub LLM: routing doesn't depend on generation."""
     s = get_settings()
     stub = FakeListChatModel(responses=["(stub reply) [1]"])
-    return CompanionAgent(build_graph(stub, KnowledgeBase.from_settings(s), eval_data_dir()))
+    return CompanionAgent(build_graph(stub, KnowledgeBase.from_settings(s), eval_escalate()))
 
 
 def main() -> None:

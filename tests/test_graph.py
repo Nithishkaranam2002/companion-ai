@@ -1,5 +1,4 @@
-from pathlib import Path
-
+from companion.db.store import InMemoryStore
 from companion.graph import CompanionAgent
 from companion.guardrails.policy import Route
 from companion.rag import KnowledgeBase
@@ -12,11 +11,12 @@ def test_in_scope_answer_has_sources(agent: CompanionAgent) -> None:
     assert state["sources"] and "[1]" in state["reply"]
 
 
-def test_crisis_escalates_with_resources(agent: CompanionAgent, tmp_path: Path) -> None:
-    state = agent.respond("s1", "I want to end my life")
+def test_crisis_escalates_with_resources(agent: CompanionAgent, store: InMemoryStore) -> None:
+    state = agent.respond("s1", "I want to end my life", user_id="u1")
     assert state["route"] == Route.ESCALATE
     assert "988" in state["reply"] and state["ticket_id"]
-    assert (tmp_path / "escalations.jsonl").exists()
+    ticket = store.escalations[state["ticket_id"]]
+    assert ticket.urgent and ticket.user_id == "u1"
 
 
 def test_medical_advice_refused_without_llm(agent: CompanionAgent) -> None:
@@ -25,8 +25,8 @@ def test_medical_advice_refused_without_llm(agent: CompanionAgent) -> None:
     assert "not a medical provider" in state["reply"]
 
 
-def test_unsafe_llm_output_is_replaced(kb: KnowledgeBase, tmp_path: Path) -> None:
-    unsafe = make_agent(kb, tmp_path, ["You should take 10 mg of melatonin."])
+def test_unsafe_llm_output_is_replaced(kb: KnowledgeBase, store: InMemoryStore) -> None:
+    unsafe = make_agent(kb, store, ["You should take 10 mg of melatonin."])
     state = unsafe.respond("s1", "I can't seem to fall asleep lately")
     assert state["route"] == Route.REFUSE
     assert "10 mg" not in state["reply"]

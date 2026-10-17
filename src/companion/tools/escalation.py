@@ -1,32 +1,14 @@
-"""Escalation to a human. Writes a ticket to a queue a human reviewer monitors."""
+"""Escalation to a human: creates a ticket in the queue the admin page shows."""
 
-import uuid
-from datetime import UTC, datetime
-from pathlib import Path
-
-from pydantic import BaseModel, Field
-
+from companion.db.models import Escalation
+from companion.db.store import Store
 from companion.guardrails.redaction import redact
-from companion.tools._store import append_jsonl
 
-URGENT_REASONS = frozenset({"crisis", "medical_emergency"})
-
-
-class EscalationTicket(BaseModel):
-    ticket_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
-    session_id: str
-    reason: str
-    summary: str
-    urgent: bool
-    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+REASONS = frozenset({"crisis", "medical_emergency", "human_request"})
 
 
-def escalate_to_human(data_dir: Path, session_id: str, reason: str, summary: str) -> EscalationTicket:
-    ticket = EscalationTicket(
-        session_id=session_id,
-        reason=reason,
-        summary=redact(summary),
-        urgent=reason in URGENT_REASONS,
-    )
-    append_jsonl(data_dir / "escalations.jsonl", ticket.model_dump())
-    return ticket
+def escalate_to_human(store: Store, reason: str, summary: str, user_id: str | None = None,
+                      conversation_id: str | None = None) -> Escalation:
+    if reason not in REASONS:
+        raise ValueError(f"reason must be one of {sorted(REASONS)}")
+    return store.create_escalation(user_id, conversation_id, reason, redact(summary))

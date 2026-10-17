@@ -1,0 +1,14 @@
+.env
+.env.*
+.venv
+.git
+.chroma
+var
+web
+ui
+tests
+evals/reports
+evals/datasets
+**/__pycache__
+.pytest_cache
+.ruff_cache

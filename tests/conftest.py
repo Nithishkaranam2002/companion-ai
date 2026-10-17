@@ -6,7 +6,8 @@ from langchain_chroma import Chroma
 from langchain_core.embeddings import DeterministicFakeEmbedding
 from langchain_core.language_models import FakeListChatModel
 
-from companion.graph import CompanionAgent, build_graph
+from companion.db.store import InMemoryStore, Store
+from companion.graph import CompanionAgent, CompanionState, EscalateFn, build_graph
 from companion.rag import KnowledgeBase
 
 KB_DIR = Path(__file__).resolve().parents[1] / "data" / "kb"
@@ -21,10 +22,23 @@ def kb() -> KnowledgeBase:
     return knowledge
 
 
-def make_agent(kb: KnowledgeBase, data_dir: Path, replies: list[str]) -> CompanionAgent:
-    return CompanionAgent(build_graph(FakeListChatModel(responses=replies), kb, data_dir))
+@pytest.fixture
+def store() -> InMemoryStore:
+    return InMemoryStore()
+
+
+def escalate_into(store: Store) -> EscalateFn:
+    def escalate(state: CompanionState, reason: str, summary: str) -> str:
+        return store.create_escalation(state.get("user_id"), None, reason, summary).id
+    return escalate
+
+
+def make_agent(kb: KnowledgeBase, store: Store, replies: list[str],
+               classifier=None) -> CompanionAgent:
+    llm = FakeListChatModel(responses=replies)
+    return CompanionAgent(build_graph(llm, kb, escalate_into(store), classifier))
 
 
 @pytest.fixture
-def agent(kb: KnowledgeBase, tmp_path: Path) -> CompanionAgent:
-    return make_agent(kb, tmp_path, ["That sounds hard. A steady sleep schedule may help [1]."])
+def agent(kb: KnowledgeBase, store: InMemoryStore) -> CompanionAgent:
+    return make_agent(kb, store, ["That sounds hard. A steady sleep schedule may help [1]."])

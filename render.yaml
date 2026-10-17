@@ -1,0 +1,40 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: companion-ai-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: LLM_PROVIDER
+        value: openai
+      - key: LLM_MODEL
+        value: gpt-5.5
+      - key: EMBEDDINGS_PROVIDER
+        value: openai
+      - key: EMBEDDINGS_MODEL
+        value: text-embedding-3-small
+      - key: RATE_LIMIT_USER_PER_HOUR
+        value: "20"
+      - key: RATE_LIMIT_DEMO_TOTAL
+        value: "10"
+      - key: RATE_LIMIT_DEMO_GLOBAL_PER_DAY
+        value: "500"
+      # Secrets: set in the Render dashboard (sync: false = never stored in this file).
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: CORS_ORIGIN_REGEX
+        sync: false
