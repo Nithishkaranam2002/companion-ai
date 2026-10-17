@@ -13,8 +13,9 @@ from typing import Any
 from langchain_core.messages import AIMessageChunk
 
 from companion.graph import CompanionAgent, CompanionState
+from companion.guardrails.empathy import FALLBACK_ACK
 from companion.guardrails.output_check import violates_medical_line
-from companion.guardrails.policy import RESPONSES, Route
+from companion.guardrails.policy import Route, refusal
 from companion.guardrails.scope import ScopeLabel
 
 _BOUNDARY = re.compile(r"[.!?:;](?=\s)|\n")
@@ -87,7 +88,9 @@ def stream_reply(agent: CompanionAgent, state: CompanionState,
         if tail:
             yield {"event": "token", "data": {"text": tail}}
     if gate.violated or (route == Route.REFUSE and final["label"] == ScopeLabel.IN_SCOPE):
-        final.update(reply=RESPONSES[ScopeLabel.MEDICAL_ADVICE], route=Route.REFUSE, sources=[])
+        if route != Route.REFUSE:  # gate caught it first; graph check_output didn't run a refusal
+            final.update(reply=refusal(FALLBACK_ACK))
+        final.update(route=Route.REFUSE, sources=[])
         yield {"event": "replace", "data": {"text": final["reply"]}}
     elif route != Route.ANSWER:
         yield {"event": "token", "data": {"text": final["reply"]}}

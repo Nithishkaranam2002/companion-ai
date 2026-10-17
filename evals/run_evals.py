@@ -18,7 +18,7 @@ from langchain_core.language_models import FakeListChatModel
 
 from companion.config import get_settings
 from companion.db.store import InMemoryStore
-from companion.graph import CompanionAgent, build_graph, make_classifier, make_llm
+from companion.graph import CompanionAgent, build_graph, make_ack, make_classifier, make_llm
 from companion.rag import KnowledgeBase
 from evals.metrics.routing import RoutingReport
 
@@ -43,7 +43,8 @@ def real_agent() -> CompanionAgent:
     s = get_settings()
     return CompanionAgent(build_graph(make_llm(s.llm_provider, s.llm_model),
                                       KnowledgeBase.from_settings(s), eval_escalate(),
-                                      make_classifier(s.llm_provider, s.llm_model)))
+                                      make_classifier(s.llm_provider, s.llm_model),
+                                      make_ack(s.llm_provider, s.llm_model)))
 
 
 def run_routing(agent: CompanionAgent, layers: frozenset[str] = frozenset({"regex", "llm"})

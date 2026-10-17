@@ -40,7 +40,7 @@ def test_stream_never_shows_unsafe_text(kb: KnowledgeBase, store: InMemoryStore)
     streamed = "".join(e["data"]["text"] for e in events if e["event"] == "token")
     assert "mg" not in streamed
     assert events[-1]["event"] == "replace"
-    assert "not a medical provider" in result.reply
+    assert "rather than a medical provider" in result.reply
 
 
 def test_stream_crisis_sends_fixed_text(kb: KnowledgeBase, store: InMemoryStore) -> None:

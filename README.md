@@ -20,7 +20,8 @@ user text ──► redact (Presidio + regex) ──► classify scope (regex + 
   If the LLM call fails, routing falls back to the regex label.
   Precedence: crisis > medical emergency > human request > medical advice.
 - **Output check**: if a reply mentions doses, diagnoses, or medication changes, the refusal text replaces it.
-- Escalation and refusal replies are fixed text and never come from the LLM.
+- Escalation replies are fixed text. Refusals are fixed text after a short, validated empathetic
+  acknowledgment (see Eval results).
 
 ## Setup
 
@@ -79,32 +80,43 @@ uv run --group evals python -m evals.run_evals --suite all --langsmith   # also 
 
 ## Eval results
 
-Latest full run (2026-10-16): app model `gpt-5.5`, judge `gpt-5.4` (a different model, to avoid
-self-grading), embeddings `text-embedding-3-small`. These are the baseline scores before any
-tuning. Aggregate scores are in [`evals/results/summary.json`](evals/results/summary.json).
+App model `gpt-5.5`, judge `gpt-5.4` (a different model, to avoid self-grading), embeddings
+`text-embedding-3-small`. Datasets: 40 safety conversations, 20 RAG questions. Both runs used the
+same datasets, metrics, and judge. Aggregate scores are in
+[`evals/results/summary.json`](evals/results/summary.json).
 
-**Safety routing (40 conversations, live two-layer classifier):** 40/40 correct (100%)
-across in-scope, diagnosis, dosing, treatment, crisis, medical emergency, and human-request cases,
-including paraphrased crises and multi-turn risk.
+**Before** = baseline (2026-10-16). **After** = warmer refusals + strict source grounding (2026-10-17).
 
-| DeepEval G-Eval metric | Mean | Pass rate | n |
-|---|---|---|---|
-| Non-medical boundary | 0.998 | 100% | 40 |
-| Crisis handling | 0.965 | 97.5% | 40 |
-| Empathetic tone | 0.843 | 87.5% | 40 |
-| Grounded citations | 0.859 | 100% | 14 answered |
+| Metric | Before | After |
+|---|---|---|
+| Safety routing, live two-layer classifier (40) | 100% | **100%** |
+| DeepEval: non-medical boundary (mean / pass) | 0.998 / 100% | **1.000 / 100%** |
+| DeepEval: crisis handling | 0.965 / 97.5% | 0.960 / 95.0% |
+| DeepEval: empathetic tone | 0.843 / 87.5% | **0.892 / 95.0%** |
+| DeepEval: grounded citations (14 answered) | 0.859 / 100% | **0.942 / 100%** |
+| RAGAS: faithfulness | 0.765 | **0.883** |
+| RAGAS: answer relevancy | 0.815 | **0.849** |
+| RAGAS: context recall | 0.900 | 0.900 |
 
-| RAGAS metric (20 questions) | Score |
-|---|---|
-| Faithfulness | 0.765 |
-| Answer relevancy | 0.815 |
-| Context recall | 0.900 |
+**What changed**
+- **Warmer refusals** (`guardrails/empathy.py`): the LLM writes only a 1–2 sentence
+  acknowledgment of the person's feelings. It's rejected, and a fixed warm opener used instead, if
+  it is too long, asks a question, contains advice words (try, should, recommend…), mentions
+  anything medical, or fails the reply check. The refusal itself is still fixed text. In testing,
+  9 of 10 real acknowledgments passed.
+- **Strict grounding** (`prompts.py`): every tip, fact, or number must come from a cited source,
+  with no tips from general knowledge. When the sources don't cover something, the reply says so.
 
-**Known weaknesses (next work):**
-- Every tone failure is the fixed refusal text. It's safe but doesn't acknowledge feelings first.
-- Faithfulness of 0.765 means replies sometimes add general tips that aren't in the cited sources.
-- Questions about helping *someone else* who may be at risk escalate as a crisis. That's
-  conservative, but the crisis reply is written for the user themselves.
+**How to read the remaining failures**
+- Crisis-handling dip (1 → 2 failures): the judge marked down the melatonin and ibuprofen
+  refusals as "overcautious" for not giving general dosing guidance. That's the judge disagreeing
+  with the product rule, not a safety regression. Next step: tell the metric that refusing
+  dosing questions is correct.
+- The one tone failure left is the medical-emergency reply, marked down for directive language
+  ("call emergency services now"). Directness is intended in an emergency.
+- One RAG question ("my friend… seems at risk") is escalated as a crisis, so it never reaches
+  retrieval and scores 0. Questions about helping *someone else* who may be at risk get the
+  crisis reply, which is written for the user themselves.
 
 ## Layout
 ```

@@ -23,3 +23,10 @@ def test_ingest_is_idempotent(kb: KnowledgeBase) -> None:
     before = len(kb.store.get()["ids"])
     kb.ingest(KB_DIR)
     assert len(kb.store.get()["ids"]) == before
+
+
+def test_prompt_requires_strict_grounding() -> None:
+    from companion.prompts import SYSTEM_PROMPT
+
+    assert "MUST come from the provided sources" in SYSTEM_PROMPT
+    assert "Do not add tips" in SYSTEM_PROMPT

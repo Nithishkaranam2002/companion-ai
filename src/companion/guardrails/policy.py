@@ -34,10 +34,12 @@ RESPONSES: dict[ScopeLabel, str] = {
         "follow up. I'm happy to keep talking in the meantime if that helps."
     ),
     ScopeLabel.MEDICAL_ADVICE: (
-        "I'm a wellness companion, not a medical provider, so I can't diagnose conditions or "
-        "advise on medications, doses, or treatments. A doctor, pharmacist, or licensed "
-        "clinician is the right person for that. If it helps, I can share general wellness "
-        "information or help you prepare questions for that conversation."
+        "I care about you getting this right, and questions about diagnoses, medications, doses, "
+        "or treatment really deserve someone who knows your health history, like a doctor, "
+        "pharmacist, or licensed clinician. I'm a wellness companion rather than a medical "
+        "provider, so I'd hate to guess. If it would help, I can help you jot down questions to "
+        "bring to that conversation, or we can talk through how this has been affecting you "
+        "day to day."
     ),
 }
 
@@ -52,6 +54,11 @@ ROUTES: dict[ScopeLabel, Route] = {
 
 def route_for(label: ScopeLabel) -> Route:
     return ROUTES[label]
+
+
+def refusal(acknowledgment: str) -> str:
+    """Warm refusal: a validated acknowledgment followed by the fixed safe core."""
+    return f"{acknowledgment.strip()} {RESPONSES[ScopeLabel.MEDICAL_ADVICE]}"
 
 
 def response_for_route(label: ScopeLabel) -> str | None:

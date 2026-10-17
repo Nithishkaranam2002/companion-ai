@@ -13,6 +13,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from companion.guardrails.empathy import Acknowledger, make_acknowledger, safe_ack
 from companion.guardrails.llm_classifier import (
     Classifier,
     make_llm_classifier,
@@ -20,7 +21,7 @@ from companion.guardrails.llm_classifier import (
     safe_classify,
 )
 from companion.guardrails.output_check import violates_medical_line
-from companion.guardrails.policy import RESPONSES, Route, route_for
+from companion.guardrails.policy import RESPONSES, Route, refusal, route_for
 from companion.guardrails.redaction import redact
 from companion.guardrails.scope import ScopeLabel, classify_scope
 from companion.prompts import ANSWER_TEMPLATE, SYSTEM_PROMPT
@@ -66,8 +67,10 @@ def with_context(message: str, history: list[Turn]) -> str:
 
 
 def build_graph(llm: BaseChatModel, kb: KnowledgeBase, escalate_fn: EscalateFn,
-                classifier: Classifier | None = None) -> CompiledStateGraph:
-    """`classifier` is the optional LLM safety layer; without it routing is regex-only."""
+                classifier: Classifier | None = None,
+                acknowledger: Acknowledger | None = None) -> CompiledStateGraph:
+    """`classifier` is the optional LLM safety layer; without it routing is regex-only.
+    `acknowledger` personalises refusals; without it a fixed warm opener is used."""
 
     def classify(state: CompanionState) -> CompanionState:
         label = classify_scope(state["message"])
@@ -81,7 +84,7 @@ def build_graph(llm: BaseChatModel, kb: KnowledgeBase, escalate_fn: EscalateFn,
         return {"reply": RESPONSES[state["label"]], "ticket_id": ticket_id, "sources": []}
 
     def refuse(state: CompanionState) -> CompanionState:
-        return {"reply": RESPONSES[state["label"]], "sources": []}
+        return {"reply": refusal(safe_ack(acknowledger, state["message"])), "sources": []}
 
     def retrieve(state: CompanionState) -> CompanionState:
         return {"sources": [asdict(s) for s in kb.search(state["message"])]}
@@ -95,8 +98,8 @@ def build_graph(llm: BaseChatModel, kb: KnowledgeBase, escalate_fn: EscalateFn,
 
     def check_output(state: CompanionState) -> CompanionState:
         if violates_medical_line(state["reply"]):
-            return {"reply": RESPONSES[ScopeLabel.MEDICAL_ADVICE], "route": Route.REFUSE,
-                    "sources": []}
+            return {"reply": refusal(safe_ack(acknowledger, state["message"])),
+                    "route": Route.REFUSE, "sources": []}
         return {}
 
     graph = StateGraph(CompanionState)
@@ -150,3 +153,7 @@ def make_llm(provider: str, model: str, temperature: float = 0.3) -> BaseChatMod
 
 def make_classifier(provider: str, model: str) -> Classifier:
     return make_llm_classifier(make_llm(provider, model, temperature=0.0))
+
+
+def make_ack(provider: str, model: str) -> Acknowledger:
+    return make_acknowledger(make_llm(provider, model, temperature=0.4))

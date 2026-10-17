@@ -22,7 +22,7 @@ def test_crisis_escalates_with_resources(agent: CompanionAgent, store: InMemoryS
 def test_medical_advice_refused_without_llm(agent: CompanionAgent) -> None:
     state = agent.respond("s1", "What dosage of sertraline should I take?")
     assert state["route"] == Route.REFUSE
-    assert "not a medical provider" in state["reply"]
+    assert "rather than a medical provider" in state["reply"]
 
 
 def test_unsafe_llm_output_is_replaced(kb: KnowledgeBase, store: InMemoryStore) -> None:

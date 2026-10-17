@@ -18,7 +18,14 @@ from companion.config import get_settings, require_provider_keys
 from companion.db.factory import get_store
 from companion.db.models import Conversation, Escalation, Message, MoodEntry
 from companion.db.store import Store
-from companion.graph import CompanionAgent, CompanionState, build_graph, make_classifier, make_llm
+from companion.graph import (
+    CompanionAgent,
+    CompanionState,
+    build_graph,
+    make_ack,
+    make_classifier,
+    make_llm,
+)
 from companion.guardrails.policy import RESPONSES, Route, route_for
 from companion.guardrails.redaction import redact
 from companion.guardrails.scope import classify_scope
@@ -55,7 +62,8 @@ def get_agent() -> CompanionAgent:
     require_provider_keys(settings)
     llm = make_llm(settings.llm_provider, settings.llm_model)
     classifier = make_classifier(settings.llm_provider, settings.llm_model)
-    return CompanionAgent(build_graph(llm, get_kb(), escalate_with(get_store()), classifier))
+    ack = make_ack(settings.llm_provider, settings.llm_model)
+    return CompanionAgent(build_graph(llm, get_kb(), escalate_with(get_store()), classifier, ack))
 
 
 @asynccontextmanager
