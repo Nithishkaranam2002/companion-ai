@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { site } from "@/lib/site";
 import { createClient } from "@/lib/supabase/client";
 
 function GoogleIcon() {
@@ -83,13 +84,17 @@ export function LoginForm() {
 
   return (
     <div className="mt-8 space-y-5">
-      <Button type="button" variant="outline" className="w-full" onClick={google} disabled={status !== "idle"}>
-        {status === "google" ? <Loader2 className="size-4 animate-spin" /> : <GoogleIcon />}
-        Continue with Google
-      </Button>
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <Separator className="flex-1" /> or <Separator className="flex-1" />
-      </div>
+      {site.googleAuth ? (
+        <>
+          <Button type="button" variant="outline" className="w-full" onClick={google} disabled={status !== "idle"}>
+            {status === "google" ? <Loader2 className="size-4 animate-spin" /> : <GoogleIcon />}
+            Continue with Google
+          </Button>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <Separator className="flex-1" /> or <Separator className="flex-1" />
+          </div>
+        </>
+      ) : null}
       <form onSubmit={sendLink} className="space-y-3">
         <Label htmlFor="email">Email address</Label>
         <Input

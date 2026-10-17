@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     kb_dir: Path = Path("data/kb")
     data_dir: Path = Path("var")
     retrieval_k: int = 4
+    index_snapshot_dir: Path = Path("data/index")  # precomputed KB embeddings shipped with the app
 
     # Supabase (names match what the Vercel Supabase integration provides)
     database_url: str = Field("", validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_URL"))
@@ -56,15 +57,41 @@ class Settings(BaseSettings):
                           self.rate_limit_demo_global_per_day)
 
 
+PROVIDER_KEYS = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
+                 "voyage": "VOYAGE_API_KEY"}
+_QUOTES = "\"'"
+
+
+def clean_value(value: str) -> str:
+    """Strip whitespace and one pair of matching quotes, as dashboards often paste them."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in _QUOTES:
+        value = value[1:-1].strip()
+    return value
+
+
+def _app_env_names() -> set[str]:
+    names = set(PROVIDER_KEYS.values()) | {"LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"}
+    for name, field in Settings.model_fields.items():
+        aliases = getattr(field.validation_alias, "choices", None) or [name]
+        names.update(str(a).upper() for a in aliases)
+    return names
+
+
+def clean_environ() -> None:
+    """Normalize this app's env vars in place; SDKs read keys from os.environ directly."""
+    for name in _app_env_names():
+        raw = os.environ.get(name)
+        if raw is not None and (cleaned := clean_value(raw)) != raw:
+            os.environ[name] = cleaned
+
+
 @lru_cache
 def get_settings() -> Settings:
     # Provider SDKs (OpenAI, Anthropic, LangSmith) read keys from os.environ, not Settings.
     load_dotenv(".env", override=False)
+    clean_environ()
     return Settings()
-
-
-PROVIDER_KEYS = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
-                 "voyage": "VOYAGE_API_KEY"}
 
 
 def require_provider_keys(settings: Settings) -> None:

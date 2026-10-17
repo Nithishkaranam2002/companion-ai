@@ -43,3 +43,26 @@ def test_anthropic_key_not_required_for_openai(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("OPENAI_API_KEY", "test")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     require_provider_keys(Settings(llm_provider="openai", embeddings_provider="openai"))
+
+
+@pytest.mark.parametrize("raw", ["sk-abc", " sk-abc\n", '"sk-abc"', "'sk-abc'", '  " sk-abc "\r\n'])
+def test_env_values_are_cleaned(raw: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", raw)
+    monkeypatch.setenv("ADMIN_EMAILS", f" {raw} ")
+    get_settings.cache_clear()
+    try:
+        settings = get_settings()
+        assert os.environ["OPENAI_API_KEY"] == "sk-abc"
+        assert settings.admin_emails == "sk-abc"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_clean_value_keeps_inner_quotes_and_unrelated_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    from companion.config import clean_environ, clean_value
+
+    assert clean_value('a"b') == 'a"b' and clean_value('"a\'') == '"a\''
+    monkeypatch.setenv("SOME_OTHER_TOOL", " keep me ")
+    clean_environ()
+    assert os.environ["SOME_OTHER_TOOL"] == " keep me "

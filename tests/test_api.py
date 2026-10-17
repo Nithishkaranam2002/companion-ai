@@ -11,7 +11,7 @@ from companion.config import get_settings
 from companion.db.factory import get_store
 from companion.db.store import InMemoryStore
 from companion.rag import KnowledgeBase
-from tests.conftest import make_agent
+from tests.conftest import make_agent, wait_until
 
 SECRET = "test-secret-at-least-32-characters-long!!"
 
@@ -57,8 +57,41 @@ def chat(client: TestClient, message: str, headers: dict, conversation_id: str |
                        headers=headers)
 
 
-def test_health(client: TestClient) -> None:
-    assert client.get("/health").json() == {"status": "ok"}
+def test_health_ok_after_warmup(client: TestClient, kb: KnowledgeBase,
+                                monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("api.main.get_kb", lambda: kb)
+    monkeypatch.setattr("api.main.ping_provider", lambda: None)
+    with client:  # runs the lifespan, which starts the warm-up thread
+        assert wait_until(lambda: client.get("/health").json()["status"] == "ok")
+        assert client.get("/health").json()["checks"] == {"knowledge_base": "ok", "llm": "ok"}
+
+
+def test_starts_degraded_when_provider_is_down(client: TestClient,
+                                               monkeypatch: pytest.MonkeyPatch) -> None:
+    def down() -> None:
+        raise ConnectionError("sk-secret-should-not-leak")
+    monkeypatch.setattr("api.main.get_kb", down)
+    monkeypatch.setattr("api.main.ping_provider", down)
+    monkeypatch.setattr("api.main.warmup.base_delay_s", 0.01)
+    with client:
+        assert wait_until(lambda: "error" in client.get("/health").json()["checks"]["knowledge_base"])
+        body = client.get("/health")
+        assert body.status_code == 200 and body.json()["status"] == "degraded"
+        assert "sk-secret" not in body.text and "ConnectionError" in body.text
+        assert body.json()["checks"]["llm"] == "error: ConnectionError"
+
+
+def test_chat_while_unavailable_still_handles_crisis(client: TestClient, store: InMemoryStore,
+                                                    monkeypatch: pytest.MonkeyPatch) -> None:
+    def down() -> None:
+        raise ConnectionError("no network")
+    monkeypatch.setattr("api.main.get_agent", down)
+    resp = chat(client, "hello there", auth())
+    assert resp.status_code == 503 and resp.json()["detail"]["reason"] == "unavailable"
+    events = sse(chat(client, "I want to end my life", auth()))
+    assert events[0][1]["route"] == "escalate" and "988" in events[1][1]["text"]
+    assert any(e.reason == "crisis" for e in store.list_escalations())
+    assert sse(chat(client, "I want to end my life", auth()))[-1][1]["remaining"] == 3  # no quota spent
 
 
 def test_requires_auth(client: TestClient) -> None:

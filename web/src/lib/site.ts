@@ -4,6 +4,8 @@ export const site = {
   description:
     "CompanionAI is a supportive wellness companion that answers with cited, trusted sources and hands off to a real person when it matters. Not a medical service.",
   disclaimer: "Not a medical service. In crisis, call or text 988.",
+  // Off until the Google provider is configured in Supabase; set NEXT_PUBLIC_GOOGLE_AUTH=1 to show it.
+  googleAuth: process.env.NEXT_PUBLIC_GOOGLE_AUTH === "1",
 } as const;
 
 export type NavLink = { href: string; label: string };

@@ -145,10 +145,16 @@ class CompanionAgent:
         return self.graph.invoke(self.initial_state(session_id, message, history, user_id))
 
 
+# The provider SDKs retry connection errors, 429s and 5xx with exponential backoff and jitter.
+MAX_RETRIES = 4
+TIMEOUT_S = 60.0
+
+
 def make_llm(provider: str, model: str, temperature: float = 0.3) -> BaseChatModel:
     from langchain.chat_models import init_chat_model
 
-    return init_chat_model(model, model_provider=provider, temperature=temperature)
+    return init_chat_model(model, model_provider=provider, temperature=temperature,
+                           max_retries=MAX_RETRIES, timeout=TIMEOUT_S)
 
 
 def make_classifier(provider: str, model: str) -> Classifier:

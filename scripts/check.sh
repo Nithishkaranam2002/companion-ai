@@ -12,7 +12,7 @@ if git add -A --dry-run | sed "s/^add '//; s/'$//" | grep -v '^scripts/check.sh$
   'sk-proj-|sk-[A-Za-z0-9]{20,}|eyJhbGciOi[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|sb_secret_|postgres(ql)?://[^ ]*:[^ @]+@' 2>/dev/null; then
   echo "secret-like value found in files above"; exit 1
 fi
-if git add -A --dry-run | grep -E "(^|/)\.env(\.|'|$)|/\.next/|test-results|playwright-report"; then
+if git add -A --dry-run | grep -v "\.env\.example'$" | grep -E "(^|/)\.env(\.|'|$)|/\.next/|test-results|playwright-report"; then
   echo "generated or secret files would be committed"; exit 1
 fi
 echo "ALL CHECKS PASSED"

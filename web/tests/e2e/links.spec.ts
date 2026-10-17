@@ -125,4 +125,14 @@ test.describe("clicking navigation", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByText(/does not diagnose, prescribe/)).toBeVisible();
   });
+
+  test("sign-in offers an email link and the demo; Google stays hidden until enabled", async ({ page, problems }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Try the 10-message demo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with Google" })).toHaveCount(
+      process.env.NEXT_PUBLIC_GOOGLE_AUTH === "1" ? 1 : 0,
+    );
+    void problems;
+  });
 });

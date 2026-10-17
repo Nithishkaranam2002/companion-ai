@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr, Field
 
 from api.auth import User, admin_user, current_user, signed_in_user
+from api.warmup import Warmup
 from companion.config import get_settings, require_provider_keys
 from companion.db.factory import get_store
 from companion.db.models import ContactMessage, Conversation, Escalation, Message, MoodEntry
@@ -43,13 +44,22 @@ HISTORY_TURNS = 12
 TITLE_CHARS = 60
 
 
+_kb_lock = threading.Lock()
+
+
 @lru_cache
-def get_kb() -> KnowledgeBase:
+def _load_kb() -> KnowledgeBase:
     settings = get_settings()
     kb = KnowledgeBase.from_settings(settings)
-    if not kb.store.get(limit=1)["ids"]:  # fresh container: build the index once
-        logger.info("indexed %d KB chunks", kb.ingest(settings.kb_dir))
+    # Only new or edited chunks are embedded; a fresh container fills from the shipped snapshot.
+    added = kb.ingest(settings.kb_dir)
+    logger.info("knowledge base ready: %d chunks (%d newly indexed)", kb.size(), added)
     return kb
+
+
+def get_kb() -> KnowledgeBase:
+    with _kb_lock:  # the warm-up thread and the first chat may race
+        return _load_kb()
 
 
 def escalate_with(store: Store) -> Any:
@@ -69,11 +79,29 @@ def get_agent() -> CompanionAgent:
     return CompanionAgent(build_graph(llm, get_kb(), escalate_with(get_store()), classifier, ack))
 
 
+def ping_provider() -> None:
+    """Confirm the key works with a free metadata call (no tokens), so a bad key shows on /health."""
+    settings = get_settings()
+    if settings.llm_provider == "openai":
+        from openai import OpenAI
+
+        OpenAI(max_retries=2, timeout=10).models.retrieve(settings.llm_model)
+
+
+def check_llm() -> None:
+    get_agent()
+    ping_provider()
+
+
+# Late-bound lambdas so tests can swap the checks. A failing check never stops the app.
+warmup = Warmup({"knowledge_base": lambda: get_kb(), "llm": lambda: check_llm()})
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    if get_settings().embeddings_provider != "hash":
-        get_kb()  # warm the index at boot rather than on the first chat
+    warmup.start()
     yield
+    warmup.stop()
 
 
 def create_app() -> FastAPI:
@@ -131,8 +159,9 @@ def _public_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, Any]:
+    """Always 200 so the platform keeps the instance up; "degraded" means a check is failing."""
+    return {"status": warmup.status, "checks": dict(warmup.checks)}
 
 
 @app.get("/me", response_model=MeResponse)
@@ -144,14 +173,30 @@ def me(user: Annotated[User, Depends(current_user)], store: StoreDep) -> MeRespo
                       limit=limits.demo_total if user.is_anonymous else limits.user_per_hour)
 
 
-def _over_quota_safety_reply(user: User, store: StoreDep, message: str,
-                             conversation_id: str | None) -> str | None:
-    """Rate limits never block crisis help: regex-only check, no LLM call."""
+def _regex_safety_reply(user: User, store: StoreDep, message: str,
+                        conversation_id: str | None) -> str | None:
+    """Limits and outages never block crisis help: regex-only check, no LLM call."""
     label = classify_scope(redact(message))
     if route_for(label) != Route.ESCALATE:
         return None
     store.create_escalation(user.id, conversation_id, label.value, redact(message))
     return RESPONSES[label]
+
+
+def _fixed_reply(text: str, remaining: int) -> StreamingResponse:
+    def stream() -> Iterator[str]:
+        yield _sse("meta", {"route": "escalate", "label": "crisis", "conversation_id": None})
+        yield _sse("token", {"text": text})
+        yield _sse("done", {"escalated": True, "remaining": remaining})
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+def _agent_or_none() -> CompanionAgent | None:
+    try:
+        return get_agent()
+    except Exception as exc:  # noqa: BLE001 - any start-up failure means "not ready"
+        logger.warning("agent unavailable (%s)", type(exc).__name__)
+        return None
 
 
 @app.post("/chat/stream")
@@ -163,21 +208,25 @@ def chat_stream(req: ChatRequest, user: Annotated[User, Depends(current_user)],
         if convo is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
 
+    agent = _agent_or_none()
+    if agent is None:  # still starting or a provider is down: no quota spent
+        safety = _regex_safety_reply(user, store, req.message, req.conversation_id)
+        if safety is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, {
+                "reason": "unavailable",
+                "message": "CompanionAI is waking up. Please try again in a minute."})
+        remaining = store.remaining_quota(user.id, user.is_anonymous, get_settings().rate_limits)
+        return _fixed_reply(safety, remaining)
+
     decision = store.consume_message_quota(user.id, user.is_anonymous, get_settings().rate_limits)
     if not decision.allowed:
-        safety = _over_quota_safety_reply(user, store, req.message, req.conversation_id)
+        safety = _regex_safety_reply(user, store, req.message, req.conversation_id)
         if safety is None:
             logger.info("rate_limited user=%s reason=%s", user.id, decision.reason)
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
                                 {"reason": decision.reason, "message": _limit_text(decision.reason)})
+        return _fixed_reply(safety, 0)
 
-        def crisis_only() -> Iterator[str]:
-            yield _sse("meta", {"route": "escalate", "label": "crisis", "conversation_id": None})
-            yield _sse("token", {"text": safety})
-            yield _sse("done", {"escalated": True, "remaining": 0})
-        return StreamingResponse(crisis_only(), media_type="text/event-stream")
-
-    agent = get_agent()
     history = []
     if convo is not None:
         history = [{"role": m.role, "content": m.content}

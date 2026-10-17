@@ -1,9 +1,11 @@
 """Retrieval over the curated wellness knowledge base (ChromaDB)."""
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.embeddings import DeterministicFakeEmbedding, Embeddings
@@ -12,6 +14,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from companion.config import Settings, get_settings
 
 COLLECTION = "wellness_kb"
+EMBED_MAX_RETRIES = 4
 
 
 @dataclass(frozen=True)
@@ -21,16 +24,59 @@ class Source:
     snippet: str
 
 
-def make_embeddings(settings: Settings) -> Embeddings:
+def _text_key(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()[:32]
+
+
+def snapshot_path(settings: Settings) -> Path:
+    name = f"{settings.embeddings_provider}-{settings.embeddings_model}".replace("/", "_")
+    return settings.index_snapshot_dir / f"{name}.npz"
+
+
+def save_snapshot(path: Path, texts: list[str], vectors: list[list[float]], model: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, keys=np.array([_text_key(t) for t in texts]),
+                        vectors=np.asarray(vectors, dtype=np.float32),
+                        meta=np.array(json.dumps({"model": model})))
+
+
+def load_snapshot(path: Path) -> dict[str, list[float]]:
+    if not path.exists():
+        return {}
+    with np.load(path) as data:
+        return {str(k): v.tolist() for k, v in zip(data["keys"], data["vectors"], strict=True)}
+
+
+class SnapshotEmbeddings(Embeddings):
+    """Serves document vectors from a shipped snapshot; only new or edited chunks hit the API."""
+
+    def __init__(self, base: Embeddings, snapshot: dict[str, list[float]]) -> None:
+        self.base = base
+        self.snapshot = snapshot
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        missing = [t for t in texts if _text_key(t) not in self.snapshot]
+        fresh = dict(zip(missing, self.base.embed_documents(missing), strict=True)) if missing else {}
+        return [self.snapshot.get(_text_key(t)) or fresh[t] for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.base.embed_query(text)
+
+
+def make_embeddings(settings: Settings, use_snapshot: bool = True) -> Embeddings:
     if settings.embeddings_provider == "openai":
         from langchain_openai import OpenAIEmbeddings
 
-        return OpenAIEmbeddings(model=settings.embeddings_model)
-    if settings.embeddings_provider == "voyage":
+        base: Embeddings = OpenAIEmbeddings(model=settings.embeddings_model,
+                                            max_retries=EMBED_MAX_RETRIES)
+    elif settings.embeddings_provider == "voyage":
         from langchain_voyageai import VoyageAIEmbeddings  # optional dependency
 
-        return VoyageAIEmbeddings(model=settings.embeddings_model)
-    return DeterministicFakeEmbedding(size=256)
+        base = VoyageAIEmbeddings(model=settings.embeddings_model)
+    else:
+        return DeterministicFakeEmbedding(size=256)
+    snapshot = load_snapshot(snapshot_path(settings)) if use_snapshot else {}
+    return SnapshotEmbeddings(base, snapshot) if snapshot else base
 
 
 def _parse_front_matter(text: str) -> tuple[dict[str, str], str]:
@@ -75,10 +121,18 @@ class KnowledgeBase:
         return cls(store, k=settings.retrieval_k)
 
     def ingest(self, kb_dir: Path) -> int:
-        docs = load_kb(kb_dir)
-        if docs:
-            self.store.add_documents(docs, ids=[_doc_id(d) for d in docs])
-        return len(docs)
+        """Sync the index with the KB: embed only new chunks, drop removed ones. Returns # added."""
+        docs = {_doc_id(d): d for d in load_kb(kb_dir)}
+        existing = set(self.store.get(include=[])["ids"])
+        if stale := sorted(existing - docs.keys()):
+            self.store.delete(ids=stale)
+        new = [i for i in docs if i not in existing]
+        if new:
+            self.store.add_documents([docs[i] for i in new], ids=new)
+        return len(new)
+
+    def size(self) -> int:
+        return len(self.store.get(include=[])["ids"])
 
     def search(self, query: str, k: int | None = None) -> list[Source]:
         hits = self.store.similarity_search(query, k=k or self.k)

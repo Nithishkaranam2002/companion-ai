@@ -1,4 +1,6 @@
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -42,3 +44,12 @@ def make_agent(kb: KnowledgeBase, store: Store, replies: list[str],
 @pytest.fixture
 def agent(kb: KnowledgeBase, store: InMemoryStore) -> CompanionAgent:
     return make_agent(kb, store, ["That sounds hard. A steady sleep schedule may help [1]."])
+
+
+def wait_until(predicate: Callable[[], bool], timeout_s: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
