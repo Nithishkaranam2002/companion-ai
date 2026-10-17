@@ -125,12 +125,9 @@ def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
-def _unique_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: dict[str, dict[str, Any]] = {}
-    for s in sources:
-        seen.setdefault(s["url"], {"title": s["title"], "url": s["url"],
-                                   "snippet": s["snippet"][:280]})
-    return list(seen.values())
+def _public_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep retrieval order and duplicates: citation [n] refers to sources[n-1]."""
+    return [{"title": s["title"], "url": s["url"], "snippet": s["snippet"][:280]} for s in sources]
 
 
 @app.get("/health")
@@ -198,14 +195,14 @@ def chat_stream(req: ChatRequest, user: Annotated[User, Depends(current_user)],
                 if ev["event"] == "meta":
                     ev["data"]["conversation_id"] = convo.id
                 if ev["event"] == "sources":
-                    ev["data"]["sources"] = _unique_sources(ev["data"]["sources"])
+                    ev["data"]["sources"] = _public_sources(ev["data"]["sources"])
                 yield _sse(ev["event"], ev["data"])
         except Exception:
             logger.exception("chat stream failed conversation=%s", convo.id)
             yield _sse("error", {"message": "Something went wrong. Please try again."})
             return
         final = result.state
-        sources = _unique_sources(final.get("sources", []))
+        sources = _public_sources(final.get("sources", []))
         msg = store.add_message(user.id, convo.id, "assistant", final["reply"],
                                 final["route"].value, final["label"].value, sources)
         logger.info("chat user=%s conversation=%s label=%s route=%s", user.id, convo.id,

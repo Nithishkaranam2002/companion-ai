@@ -183,3 +183,10 @@ def test_contact_form(client: TestClient, store: InMemoryStore) -> None:
     boss = auth(sub="admin", email="boss@example.com")
     assert client.get("/admin/contact", headers=auth()).status_code == 403
     assert client.get("/admin/contact", headers=boss).json()[0]["email"] == "ada@example.com"
+
+
+def test_sources_keep_citation_order(client: TestClient) -> None:
+    events = sse(chat(client, "How can I sleep better?", auth()))
+    sources = next(d for e, d in events if e == "sources")["sources"]
+    assert len(sources) == 2  # k=2 in the test KB, duplicates kept so [n] maps to sources[n-1]
+    assert all(set(s) == {"title", "url", "snippet"} for s in sources)
