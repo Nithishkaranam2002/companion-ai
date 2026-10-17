@@ -35,6 +35,22 @@ Anthropic is supported as an optional LLM (`LLM_PROVIDER=anthropic`, needs `ANTH
 The app exits with a clear error at startup if the selected provider's key is missing.
 Set `EMBEDDINGS_PROVIDER=hash` for offline development (it doesn't retrieve meaningfully, so don't use it in production).
 
+## Database (Supabase)
+
+Provisioned through the Vercel Marketplace (Supabase integration). The API connects with
+`POSTGRES_URL` (pooled) and verifies Supabase logins with `SUPABASE_URL` (ES256 signing keys via
+the project's public key endpoint) or `SUPABASE_JWT_SECRET` (older HS256 projects).
+
+```bash
+uv run python -m companion.db.migrate           # applies supabase/migrations/*.sql
+TEST_DATABASE_URL=... uv run pytest tests/test_store.py   # store contract tests against Postgres
+```
+
+Row-level security is on for every table. Signed-in users can read only their own
+conversations, messages and moods. Escalations and usage events have no client access at all.
+All writes go through the API, which redacts first. Verified: with the public anon key, every
+table reads as 0 rows and inserts are refused.
+
 ## Run
 
 ```bash
