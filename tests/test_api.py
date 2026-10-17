@@ -190,3 +190,22 @@ def test_sources_keep_citation_order(client: TestClient) -> None:
     sources = next(d for e, d in events if e == "sources")["sources"]
     assert len(sources) == 2  # k=2 in the test KB, duplicates kept so [n] maps to sources[n-1]
     assert all(set(s) == {"title", "url", "snippet"} for s in sources)
+
+
+@pytest.mark.parametrize("origin,allowed", [
+    ("https://companion-ai-abc123xyz-nithish-karanam-s-projects.vercel.app", True),
+    ("https://companion-ai-evil-nithish-karanam-s-projects.vercel.app.attacker.com", False),
+    ("https://companion-ai-x-someone-else.vercel.app", False),
+])
+def test_cors_preview_regex(origin: str, allowed: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+    from api.main import create_app
+
+    monkeypatch.setenv("CORS_ORIGIN_REGEX",
+                       r"https://companion-ai-[a-z0-9]+-nithish-karanam-s-projects\.vercel\.app")
+    get_settings.cache_clear()
+    try:
+        resp = TestClient(create_app()).options(
+            "/health", headers={"Origin": origin, "Access-Control-Request-Method": "GET"})
+    finally:
+        get_settings.cache_clear()
+    assert (resp.headers.get("access-control-allow-origin") == origin) is allowed

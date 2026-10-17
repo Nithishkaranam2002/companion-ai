@@ -1,0 +1,8 @@
+.env
+.env.*
+.agents
+.claude
+test-results
+playwright-report
+blob-report
+tests

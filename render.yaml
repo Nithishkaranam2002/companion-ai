@@ -1,7 +1,7 @@
 # Render Blueprint: https://render.com/docs/blueprint-spec
 services:
   - type: web
-    name: companion-ai-api
+    name: companionai-wellness-api
     runtime: docker
     plan: free
     region: oregon
