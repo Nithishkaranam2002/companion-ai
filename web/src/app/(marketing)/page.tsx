@@ -146,7 +146,7 @@ export default function LandingPage() {
                   That sounds really uncomfortable — presentations can put your body on high alert. One
                   thing that may help is slow breathing: breathe in gently through your nose for a count
                   of five, then out for five, for 3–5 minutes{" "}
-                  <span className="rounded bg-primary/15 px-1 font-medium text-primary">[1]</span>.
+                  <span className="rounded bg-background px-1 font-medium text-primary ring-1 ring-primary/30">[1]</span>.
                 </p>
               </div>
               <div className="flex max-w-[92%] items-start gap-3 rounded-xl border bg-background p-3">

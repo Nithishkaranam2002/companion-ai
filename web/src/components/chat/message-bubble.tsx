@@ -31,7 +31,7 @@ function components(sources: Source[]): Components {
                 href={source.url}
                 target="_blank"
                 rel="noreferrer"
-                className="mx-0.5 inline-flex h-5 items-center rounded-md bg-primary/12 px-1.5 align-text-top text-xs font-semibold text-primary no-underline transition-colors hover:bg-primary/20"
+                className="mx-0.5 inline-flex h-5 items-center rounded-md bg-background px-1.5 align-text-top text-xs font-semibold text-primary no-underline ring-1 ring-primary/30 transition-colors hover:bg-primary/10"
                 aria-label={`Source ${children}: ${source.title} (opens in a new tab)`}
               >
                 {children}
