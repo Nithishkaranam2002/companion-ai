@@ -46,7 +46,8 @@ test.describe("@live mood and admin", () => {
     try {
       // Create a real ticket through the API as a separate user (no LLM: escalation path).
       const reporter = await createTestUser();
-      const { data: link } = await sb.auth.admin.generateLink({ type: "magiclink", email: reporter.email });
+      const { data: link, error: linkError } = await sb.auth.admin.generateLink({ type: "magiclink", email: reporter.email });
+      if (linkError || !link.properties) throw linkError ?? new Error("generateLink returned no token");
       const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
         auth: { persistSession: false },
       });
