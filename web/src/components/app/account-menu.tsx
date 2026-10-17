@@ -2,7 +2,6 @@
 
 import { LogOut, MessageCircle, Shield, SmilePlus, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,12 +17,12 @@ import { createClient } from "@/lib/supabase/client";
 
 export function AccountMenu() {
   const { me } = useMe();
-  const router = useRouter();
 
   async function signOut() {
-    await createClient().auth.signOut();
-    router.push("/");
-    router.refresh();
+    // Local scope: other devices stay signed in. A full replace (not a client push) drops the
+    // client router cache and the private page's history entry, so Back can't show it again.
+    await createClient().auth.signOut({ scope: "local" });
+    window.location.replace("/");
   }
 
   const label = me?.is_anonymous ? "Demo session" : (me?.email ?? "Your account");

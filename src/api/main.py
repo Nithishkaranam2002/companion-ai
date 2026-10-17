@@ -112,7 +112,7 @@ def create_app() -> FastAPI:
         allow_origins=settings.origins,
         allow_origin_regex=settings.cors_origin_regex or None,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
     return application
@@ -125,6 +125,10 @@ StoreDep = Annotated[Store, Depends(get_store)]
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     conversation_id: str | None = None
+
+
+class RenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=TITLE_CHARS)
 
 
 class MoodRequest(BaseModel):
@@ -290,6 +294,19 @@ def delete_conversation(conversation_id: str, user: Annotated[User, Depends(curr
                         store: StoreDep) -> None:
     if not store.delete_conversation(user.id, conversation_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
+
+
+@app.patch("/conversations/{conversation_id}", response_model=Conversation)
+def rename_conversation(conversation_id: str, req: RenameRequest,
+                        user: Annotated[User, Depends(current_user)],
+                        store: StoreDep) -> Conversation:
+    title = redact(req.title.strip())
+    if not title:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Title can't be empty")
+    convo = store.rename_conversation(user.id, conversation_id, title)
+    if convo is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
+    return convo
 
 
 @app.post("/mood", response_model=MoodEntry, status_code=status.HTTP_201_CREATED)

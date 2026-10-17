@@ -1,0 +1,44 @@
+name: UI audit
+
+# The full click-through matrix: every element, 4 account states, desktop + mobile, light + dark.
+# Mocked API (no model calls); needs the Supabase repository secrets for real sign-in.
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Audit
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' }}
+        run: AUDIT=1 npx playwright test audit special-flows --workers=4
+      - name: Report
+        if: always() && env.NEXT_PUBLIC_SUPABASE_URL != ''
+        run: npm run audit:report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-audit
+          path: |
+            tests/ui-audit.md
+            tests/ui-inventory.md
+            web/playwright-report

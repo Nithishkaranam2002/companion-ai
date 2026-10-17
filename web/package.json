@@ -10,7 +10,9 @@
     "sync:evals": "node scripts/sync-evals.mjs",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "test:e2e:live": "LIVE=1 playwright test live- --project=desktop"
+    "test:e2e:live": "LIVE=1 playwright test live- --project=desktop",
+    "test:audit": "AUDIT=1 playwright test audit special-flows && node scripts/audit-report.mjs",
+    "audit:report": "node scripts/audit-report.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

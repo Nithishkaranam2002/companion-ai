@@ -159,6 +159,7 @@ All endpoints except `/health`, `/safety/summary` and `/contact` need a Supabase
 | POST | `/chat/stream` | `{message, conversation_id?}` → SSE: `meta`, `sources`, `token`, `replace`, `done`, `error` |
 | GET | `/conversations` | Your conversations, newest first |
 | GET | `/conversations/{id}/messages` | Messages (stored redacted) |
+| PATCH | `/conversations/{id}` | Rename `{title}` (1–60 chars, redacted like everything stored) |
 | DELETE | `/conversations/{id}` | Delete a conversation |
 | POST · GET | `/mood` | Log `{score 1-10, note}` (note redacted) · list the last `days` |
 | GET | `/admin/escalations` | Ticket queue (`ADMIN_EMAILS` only), `?status=open\|resolved` |
@@ -198,6 +199,26 @@ NEXT_PUBLIC_API_URL=https://companionai-wellness-api.onrender.com LIVE=1 npm run
 # Refresh README screenshots:
 SCREENSHOTS=1 E2E_BASE_URL=https://companion-ai-tawny.vercel.app npx playwright test screenshots
 ```
+
+### Click-through audit
+
+`tests/e2e/audit.spec.ts` finds every interactive element on every page and tests each one in 4 account
+states (logged out, demo, signed in, admin) × desktop 1440 px / mobile 390 px × light/dark. Each element must
+be reachable with the mouse and with Tab, and Enter/Space/arrow keys must do something visible and correct:
+go to the right page (no 404, no dead `#` links), open the right site in a new tab with `noopener`, open a menu
+or dialog (whose contents are then tested too), or update the page. Console errors fail the page. The API is
+mocked statefully, so the audit makes no model calls and writes nothing. Supabase sign-in stays real, using
+one shared test user and one demo session per run.
+
+```bash
+cd web && npm run test:audit        # ~45 min; writes tests/ui-audit.md (results) and tests/ui-inventory.md
+```
+
+[`tests/ui-audit.md`](tests/ui-audit.md) has the latest results table and the fixes the audit led to;
+[`tests/ui-inventory.md`](tests/ui-inventory.md) lists every clickable element by page and state.
+`special-flows.spec.ts` covers what a generic sweep can't judge: what each pricing button promises, loading
+states, rename/delete/new chat, mood logging, the demo running out, and Back after signing in and out.
+It runs on every push; the full audit runs nightly (`.github/workflows/ui-audit.yml`) and on demand.
 
 The live specs cover a cited answer, a medication question (caring refusal, no dose), a crisis
 message (988 banner + ticket), and the demo button from the landing page (counter 10 → 9).

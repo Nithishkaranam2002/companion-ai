@@ -1,0 +1,47 @@
+[
+  {
+    "title": "Demo buttons below the fold sent people to sign-in",
+    "match": "^/ button \"Start the demo\"",
+    "fix": "Scrolling to the bottom \"Start the demo\" button brought the footer's Chat link into view; Next.js prefetched /chat while logged out and cached the sign-in redirect, which the button then replayed. Demo buttons now do a full navigation after the demo session starts."
+  },
+  {
+    "title": "Conversations couldn't be renamed",
+    "match": "Options for conversation",
+    "fix": "Added an options menu per conversation (Rename / Delete), a rename dialog with a saving state, and PATCH /conversations/{id} (titles are redacted like everything else stored)."
+  },
+  {
+    "title": "Keyboard focus was lost when the rename/delete dialogs opened",
+    "match": "› menuitem \"(Rename|Delete)\"",
+    "fix": "The dialog opened while the menu was still closing, and the menu took focus back, leaving keyboard users on the page body. Dialogs now open after the menu has closed, so focus lands in the Name field / on the confirm buttons."
+  },
+  {
+    "title": "\"New chat\" on an empty chat and clicking the open conversation did nothing",
+    "match": "(button \"New chat\"|button \"Feeling overwhelmed tonight)",
+    "fix": "Both now put the cursor in the message box (and close the drawer on mobile)."
+  },
+  {
+    "title": "A used-up demo only showed a disabled box after a reload",
+    "match": "^/chat .*Create a free account",
+    "fix": "\"Demo complete. Create a free account to keep chatting\" now shows whenever the demo is used up, not only right after the last message."
+  },
+  {
+    "title": "Back after signing in showed the sign-in form again",
+    "match": "^/login ",
+    "fix": "The proxy sends signed-in people from /login straight on to where they were going (demo users can still reach it to create an account)."
+  },
+  {
+    "title": "Back after signing out could show a private page, and sign-out signed out every device",
+    "match": "menuitem \"Sign out\"",
+    "fix": "Sign-out is now for this browser only and replaces the history entry with a full navigation; private pages are sent with Cache-Control: no-store so Back re-checks the session and goes to sign-in."
+  },
+  {
+    "title": "Deleting a conversation had no working state",
+    "match": "alertdialog \"Delete",
+    "fix": "The confirm button shows a spinner and both buttons are disabled until the delete finishes."
+  },
+  {
+    "title": "Pricing buttons didn't say what happens next",
+    "match": "^/pricing link",
+    "fix": "Each plan button now has a note: \"Email sign-in link. No card needed.\" or \"Opens a short form. No payment.\" (no checkout exists)."
+  }
+]

@@ -23,6 +23,8 @@ class Store(Protocol):
     def get_conversation(self, user_id: str, conversation_id: str) -> Conversation | None: ...
     def list_conversations(self, user_id: str, limit: int = 50) -> list[Conversation]: ...
     def delete_conversation(self, user_id: str, conversation_id: str) -> bool: ...
+    def rename_conversation(self, user_id: str, conversation_id: str,
+                            title: str) -> Conversation | None: ...
     def add_message(self, user_id: str, conversation_id: str, role: str, content: str,
                     route: str | None = None, label: str | None = None,
                     sources: list[dict[str, Any]] | None = None) -> Message: ...
@@ -81,6 +83,14 @@ class InMemoryStore:
         del self.conversations[conversation_id]
         self.messages = [m for m in self.messages if m.conversation_id != conversation_id]
         return True
+
+    def rename_conversation(self, user_id: str, conversation_id: str,
+                            title: str) -> Conversation | None:
+        if not self.get_conversation(user_id, conversation_id):
+            return None
+        convo = self.conversations[conversation_id].model_copy(update={"title": title})
+        self.conversations[conversation_id] = convo
+        return convo
 
     def add_message(self, user_id: str, conversation_id: str, role: str, content: str,
                     route: str | None = None, label: str | None = None,

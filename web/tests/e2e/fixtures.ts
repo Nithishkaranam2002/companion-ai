@@ -32,34 +32,11 @@ export const test = base.extend<{ problems: string[] }>({
 
 export { expect };
 
-/**
- * Signed-in tests: one throwaway Supabase user and one sign-in per worker, reused via
- * storageState (signing in per test trips Supabase's auth rate limits).
- */
-export const authedTest = test.extend<object, { workerStorageState: string; workerUser: { id: string; email: string } }>({
-  workerUser: [
-    async ({}, use) => {
-      const { createTestUser, deleteTestUser } = await import("./auth-helper");
-      const user = await createTestUser();
-      await use(user);
-      await deleteTestUser(user.id);
-    },
-    { scope: "worker" },
-  ],
-  workerStorageState: [
-    async ({ browser, workerUser }, use, workerInfo) => {
-      const { signIn } = await import("./auth-helper");
-      const file = `test-results/.auth/worker-${workerInfo.parallelIndex}-${workerInfo.project.name}.json`;
-      const baseURL = workerInfo.project.use.baseURL!;
-      const context = await browser.newContext({ baseURL });
-      const page = await context.newPage();
-      await signIn(page, baseURL, workerUser.email);
-      await page.waitForURL(/\/chat$/);
-      await context.storageState({ path: file });
-      await context.close();
-      await use(file);
-    },
-    { scope: "worker" },
-  ],
-  storageState: ({ workerStorageState }, use) => use(workerStorageState),
+/** Signed-in tests share one test user per run, signed in once by global setup (signing in per
+ *  test or per worker trips Supabase's auth rate limits). */
+export const authedTest = test.extend({
+  storageState: async ({}, use) => {
+    const { USER_STATE } = await import("./global-setup");
+    await use(USER_STATE);
+  },
 });

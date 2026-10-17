@@ -55,3 +55,15 @@ export function captureAnonymousUser(page: Page): Promise<string> {
     })
     .then(async (r) => ((await r.json()) as { user: { id: string } }).user.id);
 }
+
+/** A real anonymous (demo) session created server-side, so tests can hand it to the browser
+ *  instead of creating a new anonymous user on every demo click (Supabase rate-limits those). */
+export async function createAnonymousSession() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) throw new Error("needs NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+  const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data, error } = await client.auth.signInAnonymously();
+  if (error || !data.session) throw error ?? new Error("anonymous sign-in returned no session");
+  return data.session;
+}

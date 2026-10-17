@@ -163,19 +163,19 @@ authedTest.describe("signed-in app (mocked API)", () => {
     await send(page, "hello");
     await expect(page.getByText("Demo complete")).toBeVisible();
     await expect(page.getByLabel("Message CompanionAI")).toBeDisabled();
-    await page.getByRole("link", { name: "Create a free account" }).last().click();
-    await expect(page).toHaveURL(/\/login$/);
+    // (The test user is a real account with a mocked demo profile, so following the link would
+    // redirect back to /chat; special-flows.spec.ts follows it as a real demo user.)
+    await expect(page.getByRole("alert").getByRole("link", { name: "Create a free account" })).toHaveAttribute("href", "/login");
   });
 
-  test("conversations can be deleted after confirming", async ({ page, baseURL, problems }) => {
+  test("conversations can be deleted after confirming", async ({ page, baseURL, isMobile, problems }) => {
     await mockApi(page, { conversations: [{ id: CID, title: "Evening worries", updated_at: new Date().toISOString() }] });
     await page.goto(`${baseURL}/chat`);
     const nav = page.getByRole("navigation", { name: "Conversations" });
-    if (await page.getByRole("button", { name: "Open conversations" }).isVisible()) {
-      await page.getByRole("button", { name: "Open conversations" }).click();
-    }
+    if (isMobile) await page.getByRole("button", { name: "Open conversations" }).click();
     await expect(page.getByRole("button", { name: /Evening worries/ }).last()).toBeVisible();
-    await page.getByRole("button", { name: "Delete conversation: Evening worries" }).last().click();
+    await page.getByRole("button", { name: "Options for conversation: Evening worries" }).last().click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
     await expect(page.getByText("Conversation deleted")).toBeVisible();
     await expect(nav.first()).not.toContainText("Evening worries");

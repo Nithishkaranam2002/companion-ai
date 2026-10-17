@@ -192,6 +192,9 @@ export function ChatApp() {
     updateLast((m) => ({ ...m, streaming: false, content: m.content || "_Stopped._" }));
   }
 
+  // After starting or reopening a chat, put the cursor where the person will type next.
+  const focusComposer = () => setTimeout(() => document.getElementById("chat-input")?.focus(), 0);
+
   function newChat() {
     abortRef.current?.abort();
     setCreatedHere(null);
@@ -199,12 +202,14 @@ export function ChatApp() {
     setMessages([]);
     setActiveId(null);
     router.push("/chat");
+    focusComposer();
   }
 
   function selectConversation(id: string) {
     setDrawerOpen(false);
     setCreatedHere(null);
-    router.push(`/chat/${id}`);
+    if (id !== activeId) router.push(`/chat/${id}`);
+    focusComposer();
   }
 
   async function deleteConversation(id: string) {
@@ -218,9 +223,34 @@ export function ChatApp() {
     }
   }
 
+  async function renameConversation(id: string, title: string) {
+    try {
+      const updated = await apiFetch<Conversation>(`/conversations/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title }),
+      });
+      setConversations((cs) => cs.map((c) => (c.id === id ? { ...c, title: updated.title } : c)));
+      toast.success("Conversation renamed");
+      return true;
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Couldn't rename that conversation.");
+      return false;
+    }
+  }
+
   const lastCrisis = [...messages].reverse().find((m) => m.route === "escalate" && CRISIS_LABELS.has(m.label ?? ""));
   const showBanner = Boolean(lastCrisis) && !bannerDismissed;
   const outOfDemo = Boolean(me?.is_anonymous && me.remaining_messages <= 0);
+  // A used-up demo always says how to continue, including after a reload.
+  const shownNotice: Notice | null =
+    notice ??
+    (outOfDemo
+      ? {
+          title: "Demo complete",
+          body: `You've used all ${me?.limit ?? 10} demo messages. Create a free account to keep chatting.`,
+          signup: true,
+        }
+      : null);
 
   const sidebar = (
     <ConversationSidebar
@@ -230,6 +260,7 @@ export function ChatApp() {
       onSelect={selectConversation}
       onNew={newChat}
       onDelete={deleteConversation}
+      onRename={renameConversation}
     />
   );
 
@@ -243,7 +274,8 @@ export function ChatApp() {
                 <PanelLeft className="size-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-80 p-0">
+            {/* Don't return focus to the menu button on close: the chat input takes it instead. */}
+            <SheetContent side="left" className="w-80 p-0" onCloseAutoFocus={(e) => e.preventDefault()}>
               <SheetHeader className="sr-only">
                 <SheetTitle>Conversations</SheetTitle>
               </SheetHeader>
@@ -311,13 +343,13 @@ export function ChatApp() {
                 )
               )}
               {waitingFirstToken ? <TypingIndicator /> : null}
-              {notice ? (
+              {shownNotice ? (
                 <Alert className="animate-fade-in">
                   <Sparkles className="size-4" />
-                  <AlertTitle>{notice.title}</AlertTitle>
+                  <AlertTitle>{shownNotice.title}</AlertTitle>
                   <AlertDescription>
-                    <p>{notice.body}</p>
-                    {notice.signup ? (
+                    <p>{shownNotice.body}</p>
+                    {shownNotice.signup ? (
                       <Button asChild size="sm" className="mt-3">
                         <Link href="/login">Create a free account</Link>
                       </Button>

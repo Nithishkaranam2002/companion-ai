@@ -69,6 +69,12 @@ class PostgresStore:
                         (conversation_id, user_id))
         return row is not None
 
+    def rename_conversation(self, user_id: str, conversation_id: str,
+                            title: str) -> Conversation | None:
+        row = self._one("update conversations set title = %s where id = %s and user_id = %s "
+                        "returning *", (title, conversation_id, user_id))
+        return Conversation(**self._ids(row)) if row else None
+
     def add_message(self, user_id: str, conversation_id: str, role: str, content: str,
                     route: str | None = None, label: str | None = None,
                     sources: list[dict[str, Any]] | None = None) -> Message:

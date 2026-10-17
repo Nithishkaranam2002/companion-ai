@@ -26,7 +26,7 @@ const tiers = [
       "Saved conversation history",
       "Daily mood tracker with charts",
     ],
-    cta: { label: "Create a free account", href: "/login" },
+    cta: { label: "Create a free account", href: "/login", note: "Email sign-in link. No card needed." },
     status: "Available now",
     highlight: false,
   },
@@ -42,7 +42,7 @@ const tiers = [
       "Export your conversations and mood history",
       "Priority human follow-up",
     ],
-    cta: { label: "Join the Pro waitlist", href: "/contact?topic=pro" },
+    cta: { label: "Join the Pro waitlist", href: "/contact?topic=pro", note: "Opens a short form. No payment." },
     status: "Coming soon",
     highlight: true,
   },
@@ -58,7 +58,7 @@ const tiers = [
       "Single sign-on and audit logs",
       "Business Associate Agreement on request",
     ],
-    cta: { label: "Talk to us", href: "/contact?topic=clinic" },
+    cta: { label: "Talk to us", href: "/contact?topic=clinic", note: "Opens a short form. No payment." },
     status: "Coming soon",
     highlight: false,
   },
@@ -103,10 +103,15 @@ export default function PricingPage() {
                   ))}
                 </ul>
               </CardContent>
-              <CardFooter>
+              <CardFooter className="flex-col gap-2">
                 <Button asChild className="w-full" variant={t.highlight || t.name === "Free" ? "default" : "outline"}>
-                  <Link href={t.cta.href}>{t.cta.label}</Link>
+                  <Link href={t.cta.href} aria-describedby={`cta-note-${t.name}`}>
+                    {t.cta.label}
+                  </Link>
                 </Button>
+                <p id={`cta-note-${t.name}`} className="text-xs text-muted-foreground">
+                  {t.cta.note}
+                </p>
               </CardFooter>
             </Card>
           ))}

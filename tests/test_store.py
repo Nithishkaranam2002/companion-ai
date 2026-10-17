@@ -52,6 +52,9 @@ def test_conversation_lifecycle(store_and_user: tuple[Store, str]) -> None:
     assert [m.role for m in msgs] == ["user", "assistant"]
     assert msgs[1].sources[0]["url"] == "https://x"
     assert store.list_conversations(uid)[0].id == convo.id
+    renamed = store.rename_conversation(uid, convo.id, "Evening plan")
+    assert renamed is not None and renamed.title == "Evening plan"
+    assert store.get_conversation(uid, convo.id).title == "Evening plan"
     assert store.delete_conversation(uid, convo.id)
     assert store.get_conversation(uid, convo.id) is None
 
@@ -63,6 +66,7 @@ def test_users_cannot_read_each_others_conversations(store_and_user: tuple[Store
     assert store.get_conversation(other, convo.id) is None
     assert store.list_messages(other, convo.id) == []
     assert not store.delete_conversation(other, convo.id)
+    assert store.rename_conversation(other, convo.id, "hijack") is None
 
 
 def test_moods(store_and_user: tuple[Store, str]) -> None:

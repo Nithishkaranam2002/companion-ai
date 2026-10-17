@@ -1,7 +1,7 @@
 "use client";
 
-import { MessageSquare, MessageSquarePlus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Loader2, MessageSquare, MessageSquarePlus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
 
 import {
   AlertDialog,
@@ -14,6 +14,23 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -36,6 +53,7 @@ export function ConversationSidebar({
   onSelect,
   onNew,
   onDelete,
+  onRename,
 }: {
   conversations: Conversation[];
   loading: boolean;
@@ -43,8 +61,39 @@ export function ConversationSidebar({
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => Promise<void>;
+  onRename: (id: string, title: string) => Promise<boolean>;
 }) {
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [renaming, setRenaming] = useState<Conversation | null>(null);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  // A menu item's dialog opens once the menu has fully closed; opened any earlier, the closing
+  // menu takes focus back and keyboard users land on the page instead of in the dialog.
+  const afterMenuClose = useRef<(() => void) | null>(null);
+
+  function startRename(c: Conversation) {
+    setDraft(c.title);
+    setRenaming(c);
+  }
+
+  async function saveRename(e: React.FormEvent) {
+    e.preventDefault();
+    if (!renaming || !draft.trim()) return;
+    setSaving(true);
+    const ok = await onRename(renaming.id, draft.trim());
+    setSaving(false);
+    if (ok) setRenaming(null);
+  }
+
+  async function confirmDelete(e: React.MouseEvent) {
+    e.preventDefault(); // keep the dialog open while the request runs
+    if (!pendingDelete) return;
+    setDeleting(true);
+    await onDelete(pendingDelete.id);
+    setDeleting(false);
+    setPendingDelete(null);
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -81,22 +130,77 @@ export function ConversationSidebar({
                   <span className="block truncate text-sm">{c.title || "New conversation"}</span>
                   <span className="block text-xs text-muted-foreground">{relative(c.updated_at)}</span>
                 </button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="mr-1 size-8 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-                  aria-label={`Delete conversation: ${c.title}`}
-                  onClick={() => setPendingDelete(c)}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+                {/* modal={false}: lets the rename/delete dialogs take focus cleanly after the menu closes */}
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="mr-1 size-8 shrink-0 opacity-100 data-[state=open]:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                      aria-label={`Options for conversation: ${c.title}`}
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-40"
+                    onCloseAutoFocus={(e) => {
+                      const open = afterMenuClose.current;
+                      afterMenuClose.current = null;
+                      if (open) {
+                        e.preventDefault();
+                        open();
+                      }
+                    }}
+                  >
+                    <DropdownMenuItem onSelect={() => (afterMenuClose.current = () => startRename(c))}>
+                      <Pencil className="size-4" /> Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => (afterMenuClose.current = () => setPendingDelete(c))}>
+                      <Trash2 className="size-4" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             ))
           )}
         </nav>
       </ScrollArea>
 
-      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+      <Dialog open={renaming !== null} onOpenChange={(open) => !open && !saving && setRenaming(null)}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={saveRename}>
+            <DialogHeader>
+              <DialogTitle>Rename conversation</DialogTitle>
+              <DialogDescription>Only you can see this name.</DialogDescription>
+            </DialogHeader>
+            <div className="my-5 space-y-2">
+              <Label htmlFor="conversation-title">Name</Label>
+              <Input
+                id="conversation-title"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                maxLength={60}
+                autoFocus
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenaming(null)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving || !draft.trim() || draft.trim() === renaming?.title}>
+                {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && !deleting && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
@@ -105,14 +209,13 @@ export function ConversationSidebar({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>Keep it</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
-              onClick={async () => {
-                if (pendingDelete) await onDelete(pendingDelete.id);
-                setPendingDelete(null);
-              }}
+              onClick={confirmDelete}
+              disabled={deleting}
             >
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : null}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

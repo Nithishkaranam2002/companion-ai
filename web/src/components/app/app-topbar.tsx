@@ -21,7 +21,8 @@ export function AppTopbar({ leading }: { leading?: React.ReactNode }) {
     <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background/80 px-3 backdrop-blur sm:px-4">
       <div className="flex items-center gap-1">
         {leading}
-        <Logo className="text-base [&_svg]:size-7" />
+        {/* Phones show just the mark (it keeps its accessible name), leaving room for the nav. */}
+        <Logo className="text-base max-sm:[&>span]:hidden [&_svg]:size-7" />
       </div>
       <nav aria-label="App" className="flex items-center gap-1">
         {links.map((l) => (
@@ -30,7 +31,7 @@ export function AppTopbar({ leading }: { leading?: React.ReactNode }) {
             href={l.href}
             aria-current={pathname.startsWith(l.href) ? "page" : undefined}
             className={cn(
-              "rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground",
+              "rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:px-2.5",
               pathname.startsWith(l.href) && "bg-muted text-foreground",
             )}
           >

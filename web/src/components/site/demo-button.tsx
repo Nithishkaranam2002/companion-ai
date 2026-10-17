@@ -1,7 +1,6 @@
 "use client";
 
 import { Loader2, Sparkles } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, type ComponentProps } from "react";
 import { toast } from "sonner";
 
@@ -12,7 +11,6 @@ type Props = Omit<ComponentProps<typeof Button>, "onClick"> & { label?: string }
 
 /** Starts a no-signup demo session (Supabase anonymous sign-in, 10 messages). */
 export function DemoButton({ label = "Try the demo", children, ...props }: Props) {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
 
   async function start() {
@@ -27,8 +25,10 @@ export function DemoButton({ label = "Try the demo", children, ...props }: Props
         return;
       }
     }
-    router.push("/chat");
-    router.refresh();
+    // Full navigation, not router.push: a /chat link prefetched while logged out (e.g. the footer)
+    // caches the sign-in redirect, and a client push would replay it.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- intentional, see above
+    window.location.assign("/chat");
   }
 
   return (

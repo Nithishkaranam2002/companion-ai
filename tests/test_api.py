@@ -119,7 +119,24 @@ def test_conversations_are_private(client: TestClient) -> None:
     other = auth(sub="user-2")
     assert client.get(f"/conversations/{cid}/messages", headers=other).status_code == 404
     assert chat(client, "hi", other, cid).status_code == 404
+    assert client.patch(f"/conversations/{cid}", json={"title": "x"}, headers=other).status_code == 404
     assert client.delete(f"/conversations/{cid}", headers=auth()).status_code == 204
+
+
+def test_rename_conversation_is_redacted_and_validated(client: TestClient) -> None:
+    cid = sse(chat(client, "hello there", auth()))[0][1]["conversation_id"]
+    resp = client.patch(f"/conversations/{cid}", json={"title": "  Call 555-123-4567  "},
+                        headers=auth())
+    assert resp.status_code == 200 and resp.json()["title"] == "Call <PHONE_NUMBER>"
+    assert client.get("/conversations", headers=auth()).json()[0]["title"] == "Call <PHONE_NUMBER>"
+    for bad in ("", "x" * 61):
+        assert client.patch(f"/conversations/{cid}", json={"title": bad},
+                            headers=auth()).status_code == 422
+    assert client.patch(f"/conversations/{cid}", json={"title": "   "},
+                        headers=auth()).status_code == 422
+    preflight = client.options(f"/conversations/{cid}", headers={
+        "Origin": "http://localhost:3000", "Access-Control-Request-Method": "PATCH"})
+    assert "PATCH" in preflight.headers["access-control-allow-methods"]
 
 
 def test_continues_conversation_with_history(client: TestClient, store: InMemoryStore) -> None:
