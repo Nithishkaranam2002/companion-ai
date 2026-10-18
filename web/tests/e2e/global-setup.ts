@@ -10,11 +10,19 @@ import { createClient, type Session } from "@supabase/supabase-js";
 
 import { createAnonymousSession, createTestUser } from "./auth-helper";
 
-export const AUTH_DIR = "test-results/.auth";
-export const ANON_FILE = `${AUTH_DIR}/anon-session.json`;
-export const USER_FILE = `${AUTH_DIR}/user.json`; // { id, email }
-export const USER_STATE = `${AUTH_DIR}/user-state.json`;
-export const DEMO_STATE = `${AUTH_DIR}/demo-state.json`;
+/** Per-run session files, outside test-results/ (Playwright empties that at the start of every run).
+ *  Each run gets its own folder, so two runs at once can't delete each other's sessions; global
+ *  setup sets E2E_RUN_ID, which workers inherit. */
+export function authPaths() {
+  const dir = `.e2e-state/auth/${process.env.E2E_RUN_ID ?? "local"}`;
+  return {
+    dir,
+    anon: `${dir}/anon-session.json`,
+    user: `${dir}/user.json`, // { id, email }
+    userState: `${dir}/user-state.json`,
+    demoState: `${dir}/demo-state.json`,
+  };
+}
 
 /** Turns a Supabase session into a Playwright storage state with the app's auth cookies. */
 async function storageStateFor(session: Session, baseURL: string) {
@@ -66,14 +74,16 @@ export default async function globalSetup(config: FullConfig) {
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
   const baseURL = config.projects[0].use.baseURL!;
-  fs.mkdirSync(AUTH_DIR, { recursive: true });
+  process.env.E2E_RUN_ID = `${Date.now()}-${process.pid}`;
+  const paths = authPaths();
+  fs.mkdirSync(paths.dir, { recursive: true });
   const write = (file: string, data: unknown) => fs.writeFileSync(file, JSON.stringify(data), { mode: 0o600 });
 
   const anon = await createAnonymousSession();
-  write(ANON_FILE, anon);
-  write(DEMO_STATE, await storageStateFor(anon, baseURL));
+  write(paths.anon, anon);
+  write(paths.demoState, await storageStateFor(anon, baseURL));
 
   const user = await createTestUser();
-  write(USER_FILE, user);
-  write(USER_STATE, await storageStateFor(await signInSession(user.email), baseURL));
+  write(paths.user, user);
+  write(paths.userState, await storageStateFor(await signInSession(user.email), baseURL));
 }

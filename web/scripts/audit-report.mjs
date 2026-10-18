@@ -1,9 +1,15 @@
-// Builds tests/ui-inventory.md and tests/ui-audit.md from test-results/audit/*.jsonl.
-// Usage: npm run audit:report [-- "Run label"]
+// Builds tests/ui-inventory.md and tests/ui-audit.md from one audit run's results.
+// Usage: npm run audit:report [-- "Run label" [run-id]]   (default: the most recent run)
 import fs from "node:fs";
 import path from "node:path";
 
-const dir = "test-results/audit";
+const root = ".e2e-state/audit";
+const runs = fs.existsSync(root)
+  ? fs.readdirSync(root).filter((d) => fs.statSync(path.join(root, d)).isDirectory())
+  : [];
+const runId = process.argv[3] ?? runs.sort((a, b) => fs.statSync(path.join(root, b)).mtimeMs - fs.statSync(path.join(root, a)).mtimeMs)[0];
+if (!runId) throw new Error(`no audit runs in ${root}; run the audit first`);
+const dir = path.join(root, runId);
 const all = fs
   .readdirSync(dir)
   .filter((f) => f.endsWith(".jsonl"))

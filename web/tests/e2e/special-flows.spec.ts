@@ -11,10 +11,10 @@ import { cleanupUsers, createTestUser, deleteLater, signIn } from "./auth-helper
 import AxeBuilder from "@axe-core/playwright";
 
 import { authedTest, expect, test } from "./fixtures";
-import { ANON_FILE } from "./global-setup";
+import { authPaths } from "./global-setup";
 
 const hasAuth = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
-const anon = () => JSON.parse(fs.readFileSync(ANON_FILE, "utf8")) as Session;
+const anon = () => JSON.parse(fs.readFileSync(authPaths().anon, "utf8")) as Session;
 
 /** Delays one API call so its loading state is observable. */
 async function slow(page: Page, path: string, method: string, ms = 1200) {

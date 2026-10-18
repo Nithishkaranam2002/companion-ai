@@ -1,7 +1,7 @@
 // Click-through audit: every interactive element on every page, in four account states
 // (logged out, demo, signed in, admin) x desktop/mobile (projects) x light/dark.
 // The API is mocked (no model calls, nothing written); Supabase sign-in is real.
-// Results: test-results/audit/*.jsonl -> `npm run audit:report` -> tests/ui-audit.md + tests/ui-inventory.md
+// Results: .e2e-state/audit/<run id>/*.jsonl -> `npm run audit:report` -> tests/ui-audit.md + tests/ui-inventory.md
 import fs from "node:fs";
 
 import type { Session } from "@supabase/supabase-js";
@@ -18,8 +18,9 @@ import {
   type Item,
   type Role,
 } from "./audit-lib";
+import { API as API_URL } from "./audit-lib";
 import { watchErrors } from "./fixtures";
-import { ANON_FILE, DEMO_STATE, USER_STATE } from "./global-setup";
+import { authPaths } from "./global-setup";
 
 const PUBLIC = ["/", "/pricing", "/safety", "/about", "/contact", "/privacy", "/terms", "/login", "/auth/error", "/no-such-page"];
 const APP = ["/chat", `/chat/${CID_ANSWER}`, `/chat/${CID_CRISIS}`, "/mood", "/admin"];
@@ -41,10 +42,10 @@ const test = base.extend<{ role: Role }>({
   role: ["logged-out", { option: true }],
   // Shared sessions from global setup; admin = the signed-in user with admin API responses.
   storageState: async ({ role }, use) => {
-    await use(role === "logged-out" ? undefined : role === "demo" ? DEMO_STATE : USER_STATE);
+    await use(role === "logged-out" ? undefined : role === "demo" ? authPaths().demoState : authPaths().userState);
   },
 });
-const anonSession = () => JSON.parse(fs.readFileSync(ANON_FILE, "utf8")) as Session;
+const anonSession = () => JSON.parse(fs.readFileSync(authPaths().anon, "utf8")) as Session;
 
 test.skip(!process.env.SUPABASE_SERVICE_ROLE_KEY, "needs SUPABASE_SERVICE_ROLE_KEY for test users");
 
@@ -69,6 +70,17 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
           });
           const cookies = await context.cookies();
           const problems = watchErrors(page);
+          if (process.env.AUDIT_DEBUG_401) {
+            const t0 = Date.now();
+            page.on("request", (r) => {
+              if (r.url().startsWith(API_URL))
+                console.log(`+${Date.now() - t0}ms req ${r.method()} ${new URL(r.url()).pathname} frame=${r.frame().url()} referer=${r.headers().referer ?? "-"} auth=${Boolean(r.headers().authorization)}`);
+            });
+            page.on("response", (r) => {
+              if (r.status() === 401) console.log(`+${Date.now() - t0}ms 401 ${new URL(r.url()).pathname} frame-now=${r.frame().url()}`);
+            });
+            page.on("framenavigated", (f) => f === page.mainFrame() && console.log(`+${Date.now() - t0}ms nav ${f.url()}`));
+          }
           if (process.env.AUDIT_DEBUG) {
             page.on("framenavigated", (f) => f === page.mainFrame() && console.log("  nav", f.url()));
             page.on("request", async (r) => {
@@ -87,6 +99,7 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
             scheme,
             includeChrome: CHROME_PAGES.has(path),
             reset: async () => {
+              if (process.env.AUDIT_DEBUG_401) console.log(`reset (page was ${page.url()})`);
               resetData();
               await context.clearCookies();
               if (cookies.length) await context.addCookies(cookies);
@@ -97,7 +110,7 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
           const slug = path.replace(/[^a-z0-9]+/gi, "_") || "root";
           saveResults(
             results.map((r) => ({ ...r, attempt: info.retry })),
-            `test-results/audit/${info.project.name}-${role}-${scheme}-${slug}-r${info.retry}.jsonl`,
+            `.e2e-state/audit/${process.env.E2E_RUN_ID ?? "local"}/${info.project.name}-${role}-${scheme}-${slug}-r${info.retry}.jsonl`,
           );
 
           const failures = results.filter((r) => r.result === "fail").map((r) => `${r.element}: ${r.detail}`);

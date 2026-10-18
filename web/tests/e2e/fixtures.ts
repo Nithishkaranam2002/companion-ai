@@ -36,7 +36,7 @@ export { expect };
  *  test or per worker trips Supabase's auth rate limits). */
 export const authedTest = test.extend({
   storageState: async ({}, use) => {
-    const { USER_STATE } = await import("./global-setup");
-    await use(USER_STATE);
+    const { authPaths } = await import("./global-setup");
+    await use(authPaths().userState);
   },
 });
