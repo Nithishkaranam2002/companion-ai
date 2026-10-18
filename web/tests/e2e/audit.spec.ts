@@ -7,7 +7,17 @@ import fs from "node:fs";
 import type { Session } from "@supabase/supabase-js";
 import { test as base, expect } from "@playwright/test";
 
-import { CID_ANSWER, CID_CRISIS, mockApi, saveResults, stubAuth, sweepPage, type Item, type Role } from "./audit-lib";
+import {
+  CID_ANSWER,
+  CID_CRISIS,
+  mockApi,
+  saveResults,
+  stubAuth,
+  stubExternalSites,
+  sweepPage,
+  type Item,
+  type Role,
+} from "./audit-lib";
 import { watchErrors } from "./fixtures";
 import { ANON_FILE, DEMO_STATE, USER_STATE } from "./global-setup";
 
@@ -42,11 +52,13 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
   for (const scheme of ["light", "dark"] as const) {
     test.describe(`@audit ${role}, ${scheme}`, () => {
       test.use({ role, colorScheme: scheme, actionTimeout: 10_000, navigationTimeout: 20_000 });
-      test.describe.configure({ mode: "parallel" });
+      // Remote runs get one retry for network blips; the report keeps only the final attempt.
+      test.describe.configure({ mode: "parallel", retries: process.env.E2E_BASE_URL ? 1 : 0 });
 
       for (const path of PAGES[role]) {
         test(`${path}`, async ({ page, context, baseURL }, info) => {
           test.setTimeout(15 * 60_000);
+          await stubExternalSites(context, baseURL!);
           await stubAuth(context, anonSession());
           const resetData = await mockApi(context, role);
           // Each element starts from the same cookies and no saved theme override.
@@ -82,7 +94,11 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
             },
             skip: (item: Item) => DEDICATED.find(([re]) => re.test(item.key))?.[1] ?? null,
           });
-          saveResults(results, `test-results/audit/${info.project.name}-${role}-${scheme}.jsonl`);
+          const slug = path.replace(/[^a-z0-9]+/gi, "_") || "root";
+          saveResults(
+            results.map((r) => ({ ...r, attempt: info.retry })),
+            `test-results/audit/${info.project.name}-${role}-${scheme}-${slug}-r${info.retry}.jsonl`,
+          );
 
           const failures = results.filter((r) => r.result === "fail").map((r) => `${r.element}: ${r.detail}`);
           expect(results.length, "found interactive elements").toBeGreaterThan(0);
@@ -90,7 +106,7 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
           // The 404 page answers 404 by design; everything else must load cleanly.
           const unexpected =
             path === "/no-such-page"
-              ? problems.filter((p) => !p.includes("/no-such-page") && !p.includes("status of 404 (Not Found)"))
+              ? problems.filter((p) => !p.includes("/no-such-page") && !/status of 404 \((Not Found)?\)/.test(p))
               : problems;
           expect(unexpected, "no console errors, 404s or failed requests").toEqual([]);
         });

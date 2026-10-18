@@ -8,6 +8,8 @@ import type { Session } from "@supabase/supabase-js";
 
 import { API, CID_ANSWER, CID_CRISIS, mockApi, stubAuth } from "./audit-lib";
 import { cleanupUsers, createTestUser, deleteLater, signIn } from "./auth-helper";
+import AxeBuilder from "@axe-core/playwright";
+
 import { authedTest, expect, test } from "./fixtures";
 import { ANON_FILE } from "./global-setup";
 
@@ -183,11 +185,14 @@ authedTest.describe("chat actions (signed in)", () => {
     await slow(page, "/mood", "POST");
     await page.goto("/mood");
     await expect(page.locator(".recharts-line-dot")).toHaveCount(8);
-    const slider = page.getByRole("slider");
+    // The thumb (role=slider) carries the name and spoken value, not the wrapper.
+    const slider = page.getByRole("slider", { name: "Mood, 1 to 10" });
+    await expect(slider).toHaveAttribute("aria-valuetext", "6 out of 10, Okay");
     await slider.focus();
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect(slider).toHaveAttribute("aria-valuenow", "8");
+    await expect(slider).toHaveAttribute("aria-valuetext", /^8 out of 10, /);
     await page.getByLabel("Note (optional)").fill("Good day");
     const save = page.getByRole("button", { name: "Save check-in" });
     await save.click();
@@ -275,3 +280,30 @@ test.describe("back button after signing in and out", () => {
     await expect(page).toHaveURL(/\/login\?next=%2Fmood/);
   });
 });
+
+// The public pages are scanned in a11y.spec.ts; these are the signed-in ones (mocked API).
+for (const scheme of ["light", "dark"] as const) {
+  authedTest.describe(`signed-in pages are accessible (${scheme})`, () => {
+    authedTest.skip(!hasAuth, "needs Supabase test keys");
+    authedTest.use({ colorScheme: scheme });
+    for (const [path, role] of [
+      ["/chat", "user"],
+      [`/chat/${CID_ANSWER}`, "user"],
+      [`/chat/${CID_CRISIS}`, "user"],
+      ["/mood", "user"],
+      ["/admin", "admin"],
+    ] as const) {
+      authedTest(`${path} (${role}) has no serious or critical axe violations`, async ({ page, context }) => {
+        await mockApi(context, role);
+        await page.goto(path);
+        await page.waitForLoadState("networkidle");
+        await page.waitForTimeout(800); // entrance animations settle before contrast checks
+        const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+        const serious = results.violations
+          .filter((v) => v.impact === "serious" || v.impact === "critical")
+          .map((v) => `${v.id}: ${v.help} -> ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`);
+        expect(serious).toEqual([]);
+      });
+    }
+  });
+}

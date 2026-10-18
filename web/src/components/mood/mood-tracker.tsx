@@ -126,7 +126,7 @@ export function MoodTracker() {
                   <form onSubmit={save} className="space-y-6">
                     <div>
                       <div className="flex items-baseline justify-between">
-                        <Label id="mood-label">Mood</Label>
+                        <Label id="mood-label" aria-hidden="true">Mood</Label>
                         <p className="text-sm" aria-live="polite">
                           <span className="font-heading text-2xl font-semibold text-primary tabular-nums">{score}</span>
                           <span className="text-muted-foreground"> / 10 · {moodWord(score)}</span>
@@ -139,8 +139,10 @@ export function MoodTracker() {
                         step={1}
                         value={[score]}
                         onValueChange={([v]) => setScore(v)}
-                        aria-labelledby="mood-label"
-                        aria-valuetext={`${score} out of 10, ${moodWord(score)}`}
+                        thumbProps={{
+                          "aria-label": "Mood, 1 to 10",
+                          "aria-valuetext": `${score} out of 10, ${moodWord(score)}`,
+                        }}
                       />
                       <div className="mt-2 flex justify-between text-xs text-muted-foreground" aria-hidden="true">
                         <span>Very low</span>

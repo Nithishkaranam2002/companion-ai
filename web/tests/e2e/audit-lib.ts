@@ -179,6 +179,19 @@ export async function stubAuth(context: BrowserContext, anon: Session) {
   );
 }
 
+/** Answers navigations to third-party sites with a blank page. Our own site, the API and
+ *  Supabase are never stubbed, so every check of our pages still hits the real thing. */
+export async function stubExternalSites(context: BrowserContext, base: string) {
+  const ours = new Set([new URL(base).host, new URL(API).host, SUPABASE ? new URL(SUPABASE).host : ""]);
+  await context.route(
+    (url) => /^https?:$/.test(url.protocol) && !ours.has(url.host),
+    (route) =>
+      route.request().isNavigationRequest()
+        ? route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>External site (stubbed)</title>" })
+        : route.fallback(),
+  );
+}
+
 // ---------------------------------------------------------------- sweep
 
 export type Item = {
@@ -206,6 +219,7 @@ export type Result = {
   kind: string;
   result: "pass" | "fail";
   detail: string;
+  attempt?: number;
 };
 
 /** Tags visible interactive elements under `scope` with data-audit ids and describes them. */
@@ -370,18 +384,13 @@ async function trigger(page: Page, item: Item, base: string, role: Role, from: s
   if (item.href && item.target === "_blank") {
     const tab = await popup;
     if (!tab) return { kind: "external link", detail: "no new tab opened", ok: false };
+    // External sites are stubbed (see stubExternalSites), so this checks where the link points, not
+    // whether a third-party site lets an automated browser in (external-links.spec.ts checks that).
     await tab.waitForURL((u) => u.protocol.startsWith("http"), { timeout: 15_000 }).catch(() => {});
-    const want = new URL(item.href).hostname.replace(/^www\./, "");
-    const got = (() => {
-      try {
-        return new URL(tab.url()).hostname.replace(/^www\./, "");
-      } catch {
-        return tab.url();
-      }
-    })();
+    const got = tab.url();
     await tab.close();
-    const ok = got === want || got.endsWith(`.${want}`) || want.endsWith(`.${got}`);
-    return { kind: "external link", detail: `new tab → ${got}`, ok };
+    const ok = got === new URL(item.href, base).href;
+    return { kind: "external link", detail: ok ? `new tab → ${got}` : `new tab → ${got} (expected ${item.href})`, ok };
   }
 
   // Wait up to 3s for any visible effect.
@@ -484,6 +493,15 @@ export type SweepOptions = {
   maxDepth?: number;
 };
 
+async function findAgain(page: Page, scope: string | null, depth: number, key: string): Promise<Item | undefined> {
+  const deadline = Date.now() + 8000;
+  for (;;) {
+    const found = (await tagItems(page, scope, `d${depth}-`)).find((i) => i.key === key);
+    if (found || Date.now() > deadline) return found;
+    await page.waitForTimeout(250);
+  }
+}
+
 /** Sweeps one page; returns one result per element (nested dialogs/menus included). */
 export async function sweepPage(o: SweepOptions): Promise<Result[]> {
   const results: Result[] = [];
@@ -505,7 +523,11 @@ export async function sweepPage(o: SweepOptions): Promise<Result[]> {
 
   const load = async () => {
     await o.reset();
-    await o.page.goto(o.path);
+    // One retry absorbs a dropped connection; a page that really fails to load fails both times.
+    await o.page.goto(o.path).catch(async () => {
+      await o.page.waitForTimeout(2000);
+      await o.page.goto(o.path);
+    });
     await o.page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
     await o.page.waitForTimeout(200);
   };
@@ -545,15 +567,22 @@ export async function sweepPage(o: SweepOptions): Promise<Result[]> {
         record(listed, chainNames, pre);
         continue;
       }
-      await load();
-      const s = depth ? await reopen(chain) : null;
+      let s: string | null | undefined = null;
+      try {
+        await load();
+        s = depth ? await reopen(chain) : null;
+      } catch (e) {
+        record(listed, chainNames, { kind: listed.role, detail: `page didn't load: ${(e as Error).message.split("\n")[0]}`, ok: false });
+        continue;
+      }
       if (depth && s === undefined) {
         record(listed, chainNames, { kind: listed.role, detail: "could not reopen its menu/dialog", ok: false });
         continue;
       }
-      const fresh = (await tagItems(o.page, s ?? null, `d${depth}-`)).find((i) => i.key === listed.key);
+      // Lists, forms and sidebars render after their data loads: wait for the element to come back.
+      const fresh = await findAgain(o.page, s ?? null, depth, listed.key);
       if (!fresh) {
-        record(listed, chainNames, { kind: listed.role, detail: "element disappeared after reload", ok: false });
+        record(listed, chainNames, { kind: listed.role, detail: "element missing after reload (waited 8s)", ok: false });
         continue;
       }
       const loc = o.page.locator(`[data-audit="${fresh.id}"]`);
@@ -585,7 +614,12 @@ export async function sweepPage(o: SweepOptions): Promise<Result[]> {
     }
   };
 
-  await load();
+  try {
+    await load();
+  } catch (e) {
+    results.push({ page: o.path, state: o.role, viewport: o.viewport, scheme: o.scheme, element: "page load", kind: "page", result: "fail", detail: (e as Error).message.split("\n")[0] });
+    return results;
+  }
   const overflow = await o.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   results.push({
     page: o.path,

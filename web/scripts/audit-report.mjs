@@ -4,11 +4,17 @@ import fs from "node:fs";
 import path from "node:path";
 
 const dir = "test-results/audit";
-const rows = fs
+const all = fs
   .readdirSync(dir)
   .filter((f) => f.endsWith(".jsonl"))
   .flatMap((f) => fs.readFileSync(path.join(dir, f), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)));
-if (!rows.length) throw new Error(`no results in ${dir}; run the audit first`);
+if (!all.length) throw new Error(`no results in ${dir}; run the audit first`);
+// A retried page (network blip on a remote run) counts by its final attempt only.
+const pageKey = (r) => `${r.viewport}|${r.state}|${r.scheme}|${r.page}`;
+const finalAttempt = new Map();
+for (const r of all) finalAttempt.set(pageKey(r), Math.max(finalAttempt.get(pageKey(r)) ?? 0, r.attempt ?? 0));
+const rows = all.filter((r) => (r.attempt ?? 0) === finalAttempt.get(pageKey(r)));
+const retried = [...finalAttempt.values()].filter((a) => a > 0).length;
 
 // Fixes made during the audit, matched against failing or previously failing elements.
 const FIXES = JSON.parse(fs.readFileSync("scripts/audit-fixes.json", "utf8"));
@@ -43,7 +49,8 @@ must do something visible and correct: navigate to the right page (no 404), open
 site, open a menu/dialog (whose contents are then tested too), or update the page. Console errors and failed
 requests fail the page. Chat replies are mocked, so the audit makes no model calls.
 
-**${rows.length} checks, ${rows.length - fails.length} passed, ${fails.length} failed.**
+**${rows.length} checks on ${finalAttempt.size} page × state × viewport × theme combinations: ${rows.length - fails.length} passed, ${fails.length} failed.**
+${retried ? `${retried} page run(s) were retried once after a network error; only the final attempt counts.` : "No page needed a retry."}
 Shared header/footer elements are tested on one page per layout, so they appear under \`/\` and \`/chat\`.
 
 | Element | Page | State | Result | What it does / fix |
