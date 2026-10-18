@@ -13,12 +13,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useMe } from "@/hooks/use-me";
+import { markSigningOut } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 
 export function AccountMenu() {
   const { me } = useMe();
 
   async function signOut() {
+    markSigningOut();
     // Local scope: other devices stay signed in. A full replace (not a client push) drops the
     // client router cache and the private page's history entry, so Back can't show it again.
     await createClient().auth.signOut({ scope: "local" });

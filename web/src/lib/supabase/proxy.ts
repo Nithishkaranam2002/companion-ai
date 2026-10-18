@@ -46,7 +46,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   // Back button after signing in lands on /login: send people on instead of showing the form again.
-  if (hasAccount && path === "/login") {
+  // (Not after the API rejected the session — ?expired=1 — so a bad session can't loop.)
+  if (hasAccount && path === "/login" && !request.nextUrl.searchParams.has("expired")) {
     const url = request.nextUrl.clone();
     const [pathname, query = ""] = safeNext(request.nextUrl.searchParams.get("next")).split("?");
     url.pathname = pathname;

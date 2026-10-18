@@ -311,3 +311,66 @@ for (const scheme of ["light", "dark"] as const) {
     }
   });
 }
+
+authedTest.describe("when the session ends under an open page", () => {
+  authedTest.skip(!hasAuth, "needs Supabase test keys");
+
+  /** Console errors other than the browser's own "Failed to load resource" line for a 401. */
+  function watchUnexpected(page: Page) {
+    const unexpected: string[] = [];
+    page.on("pageerror", (e) => unexpected.push(`pageerror: ${e.message}`));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/status of 401/.test(m.text())) unexpected.push(m.text());
+    });
+    return unexpected;
+  }
+
+  authedTest("API rejects the session: one redirect to sign-in with a note, no loop", async ({ page, context }) => {
+    await stubAuth(context, anon()); // keeps the shared session from being revoked server-side
+    await mockApi(context, "user");
+    let meCalls = 0;
+    for (const path of ["/me", "/conversations"]) {
+      await page.route(`${API}${path}`, async (route) => {
+        if (path === "/me") meCalls++;
+        await route.fulfill({ status: 401, headers: { "access-control-allow-origin": "*" }, json: { detail: "Invalid token" } });
+      });
+    }
+    const unexpected = watchUnexpected(page);
+    await page.goto("/chat");
+    await expect(page).toHaveURL(/\/login\?next=%2Fchat&expired=1$/);
+    await expect(page.getByRole("status")).toContainText("Your session ended");
+    await page.waitForTimeout(2500); // a loop would keep calling /me and navigating
+    await expect(page).toHaveURL(/\/login\?next=%2Fchat&expired=1$/);
+    expect(meCalls).toBeLessThanOrEqual(1);
+    expect(await context.cookies()).toEqual(expect.not.arrayContaining([expect.objectContaining({ name: expect.stringMatching(/-auth-token/) })]));
+    expect(unexpected).toEqual([]);
+  });
+
+  authedTest("signing out while requests are in flight lands on home, not 'session ended'", async ({ page, context }) => {
+    await stubAuth(context, anon());
+    await mockApi(context, "user");
+    for (const path of ["/conversations", `/conversations/${CID_ANSWER}/messages`]) await slow(page, path, "GET", 2000);
+    const unexpected = watchUnexpected(page);
+    await page.goto(`/chat/${CID_ANSWER}`);
+    await page.getByRole("button", { name: "Account menu" }).click();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await page.waitForTimeout(2500); // late responses from the old page must not redirect
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByText("Your session ended")).toHaveCount(0);
+    expect(unexpected).toEqual([]);
+  });
+
+  authedTest("session cleared under an open page: the next action goes to sign-in", async ({ page, context }) => {
+    await stubAuth(context, anon());
+    await mockApi(context, "user"); // answers 401 to requests without a token, like the API
+    const unexpected = watchUnexpected(page);
+    await page.goto("/mood");
+    await expect(page.getByRole("button", { name: "Save check-in" })).toBeVisible();
+    await context.clearCookies(); // e.g. cleared site data, or a sign-out in another tab
+    await page.getByRole("button", { name: "Save check-in" }).click();
+    await expect(page).toHaveURL(/\/login\?next=%2Fmood&expired=1$/);
+    await expect(page.getByRole("status")).toContainText("Your session ended");
+    expect(unexpected).toEqual([]);
+  });
+});

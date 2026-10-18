@@ -175,8 +175,6 @@ export function ChatApp() {
         const demoOver = e.reason === "demo_total" || e.reason === "demo_global";
         setNotice({ title: demoOver ? "Demo complete" : "Let's take a short pause", body: e.message, signup: demoOver });
         if (demoOver) setRemaining(0);
-      } else if (e instanceof ApiError && e.status === 401) {
-        setNotice({ title: "Your session ended", body: "Please sign in again to keep chatting.", signup: true });
       } else {
         toast.error(e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
       }

@@ -25,7 +25,9 @@ function safeNext(value: string | null) {
 }
 
 export function LoginForm() {
-  const next = safeNext(useSearchParams().get("next"));
+  const params = useSearchParams();
+  const next = safeNext(params.get("next"));
+  const expired = params.has("expired");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "google">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +86,11 @@ export function LoginForm() {
 
   return (
     <div className="mt-8 space-y-5">
+      {expired ? (
+        <p role="status" className="rounded-xl bg-secondary px-4 py-3 text-center text-sm">
+          Your session ended. Please sign in again to pick up where you left off.
+        </p>
+      ) : null}
       {site.googleAuth ? (
         <>
           <Button type="button" variant="outline" className="w-full" onClick={google} disabled={status !== "idle"}>

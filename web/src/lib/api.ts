@@ -26,6 +26,28 @@ async function headers(auth: boolean): Promise<HeadersInit> {
   return h;
 }
 
+let sessionEnding = false;
+
+/** Called before an intentional sign-out, so late 401s from the page being left don't redirect. */
+export function markSigningOut() {
+  sessionEnding = true;
+}
+
+/** A 401 means the session is gone (signed out elsewhere, refresh failed, account removed).
+ *  Clear it here and send the person to sign in once, keeping where they were. The returned
+ *  promise never settles: the page is leaving, so callers don't flash an error first. */
+function sessionEnded(): Promise<never> {
+  if (!sessionEnding && typeof window !== "undefined") {
+    sessionEnding = true;
+    const next = window.location.pathname + window.location.search;
+    void createClient()
+      .auth.signOut({ scope: "local" })
+      .catch(() => {})
+      .finally(() => window.location.replace(`/login?next=${encodeURIComponent(next)}&expired=1`));
+  }
+  return new Promise<never>(() => {});
+}
+
 async function toError(res: Response): Promise<ApiError> {
   let message = res.status >= 500 ? "The service is having trouble. Please try again shortly." : "Request failed.";
   let reason: string | undefined;
@@ -53,6 +75,7 @@ export async function apiFetch<T = unknown>(
   } catch {
     throw new ApiError("Can't reach CompanionAI right now. Check your connection and try again.", 0);
   }
+  if (res.status === 401 && auth) return sessionEnded();
   if (!res.ok) throw await toError(res);
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
@@ -84,6 +107,7 @@ export async function* streamChat(
     if ((e as Error).name === "AbortError") return;
     throw new ApiError("Can't reach CompanionAI right now. Check your connection and try again.", 0);
   }
+  if (res.status === 401) await sessionEnded();
   if (!res.ok || !res.body) throw await toError(res);
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
