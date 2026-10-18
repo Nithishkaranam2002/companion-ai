@@ -2,7 +2,7 @@
 // Needs SUPABASE_SERVICE_ROLE_KEY locally; skipped when it's absent.
 import type { Page, Route } from "@playwright/test";
 
-import { captureAnonymousUser, cleanupUsers, createTestUser, deleteLater, deleteTestUser, signIn } from "./auth-helper";
+import { cleanupUsers, createTestUser, deleteLater, signIn } from "./auth-helper";
 import { authedTest, expect, test } from "./fixtures";
 
 const API = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -196,30 +196,32 @@ authedTest.describe("signed-in app (mocked API)", () => {
 });
 
 // Own user: signing out revokes the session, so it can't share the worker's login.
+test.afterEach(cleanupUsers); // runs even when a test times out, unlike finally
+
 test("account menu signs out", async ({ page, baseURL }) => {
   test.skip(!process.env.SUPABASE_SERVICE_ROLE_KEY, "needs SUPABASE_SERVICE_ROLE_KEY for test sign-in");
   const user = await createTestUser();
-  try {
-    await mockApi(page);
-    await signIn(page, baseURL!, user.email);
-    await page.getByRole("button", { name: "Account menu" }).click();
-    await page.getByRole("menuitem", { name: "Sign out" }).click();
-    await expect(page).toHaveURL(/\/$/);
-    await page.goto(`${baseURL}/chat`);
-    await expect(page).toHaveURL(/\/login\?next=%2Fchat/);
-  } finally {
-    await deleteTestUser(user.id);
-  }
+  deleteLater(user.id);
+  await mockApi(page);
+  await signIn(page, baseURL!, user.email);
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.goto(`${baseURL}/chat`);
+  await expect(page).toHaveURL(/\/login\?next=%2Fchat/);
 });
 
-test.afterEach(cleanupUsers);
-
-test("demo button starts a demo or explains why it can't", async ({ page }) => {
+test("demo button starts a demo or explains why it can't", async ({ page, context }) => {
+  // With test keys, the run's shared (tagged) demo session stands in for a new anonymous user.
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const { authPaths } = await import("./global-setup");
+    const fs = await import("node:fs");
+    const session = JSON.parse(fs.readFileSync(authPaths().anon, "utf8"));
+    await context.route("**/auth/v1/signup**", (r) => r.fulfill({ json: session }));
+  }
   await page.goto("/");
-  if (process.env.SUPABASE_SERVICE_ROLE_KEY) void captureAnonymousUser(page).then(deleteLater, () => {});
   await page.getByRole("button", { name: "Try it free — no sign-up" }).click();
   await expect(
     page.getByText("The demo isn't available right now").or(page.getByRole("heading", { name: "How are you, really?" })),
   ).toBeVisible({ timeout: 15_000 });
-  await page.waitForLoadState("networkidle"); // let the sign-up response register for cleanup
 });

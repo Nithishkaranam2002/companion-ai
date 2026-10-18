@@ -74,7 +74,8 @@ export default async function globalSetup(config: FullConfig) {
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
   const baseURL = config.projects[0].use.baseURL!;
-  process.env.E2E_RUN_ID = `${Date.now()}-${process.pid}`;
+  // CI passes its own id so a cleanup step can find this run's users even if the job is cancelled.
+  process.env.E2E_RUN_ID ||= `${Date.now()}-${process.pid}`;
   const paths = authPaths();
   fs.mkdirSync(paths.dir, { recursive: true });
   const write = (file: string, data: unknown) => fs.writeFileSync(file, JSON.stringify(data), { mode: 0o600 });

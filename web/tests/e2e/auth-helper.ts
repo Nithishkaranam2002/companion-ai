@@ -10,9 +10,15 @@ function admin() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
+/** Every user a test creates carries this tag (plus an e2e-...@example.com email when it has one),
+ *  so scripts/e2e-cleanup.mjs can find exactly those users and never anyone else. */
+export function testUserTag() {
+  return { e2e: true, e2e_run: process.env.E2E_RUN_ID ?? "local" };
+}
+
 export async function createTestUser(): Promise<{ id: string; email: string }> {
   const email = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@example.com`;
-  const { data, error } = await admin().auth.admin.createUser({ email, email_confirm: true });
+  const { data, error } = await admin().auth.admin.createUser({ email, email_confirm: true, user_metadata: testUserTag() });
   if (error || !data.user) throw error ?? new Error("createUser failed");
   return { id: data.user.id, email };
 }
@@ -63,7 +69,7 @@ export async function createAnonymousSession() {
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) throw new Error("needs NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
   const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data, error } = await client.auth.signInAnonymously();
+  const { data, error } = await client.auth.signInAnonymously({ options: { data: testUserTag() } });
   if (error || !data.session) throw error ?? new Error("anonymous sign-in returned no session");
   return data.session;
 }
