@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "CompanionAI is free to use. Pro and Clinic plans are coming soon.",
+  description: "CompanionAI is free to use. Pro and Teams plans are coming soon.",
 };
 
 const tiers = [
@@ -47,16 +47,16 @@ const tiers = [
     highlight: true,
   },
   {
-    name: "Clinic",
+    name: "Teams",
     price: "$49",
     period: "per seat / month",
-    blurb: "For clinics and wellbeing teams supporting people between visits.",
+    blurb: "For workplaces and community groups offering everyday wellbeing support to their people.",
     features: [
       "Everything in Pro",
       "Escalation queue and reviewer dashboard",
       "Custom knowledge base from your own materials",
       "Single sign-on and audit logs",
-      "Business Associate Agreement on request",
+      "Custom onboarding and admin controls",
     ],
     cta: { label: "Talk to us", href: "/contact?topic=clinic", note: "Opens a short form. No payment." },
     status: "Coming soon",
@@ -70,7 +70,7 @@ export default function PricingPage() {
       <PageHero
         eyebrow="Pricing"
         title="Care that's free to start"
-        intro="CompanionAI is free today. Pro and Clinic plans are in development. Join the waitlist and we'll let you know when they launch."
+        intro="CompanionAI is free today. Pro and Teams plans are in development. Join the waitlist and we'll let you know when they launch."
       />
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <div className="grid gap-6 lg:grid-cols-3">

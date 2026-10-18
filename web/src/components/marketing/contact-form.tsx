@@ -13,7 +13,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 const topicLabels: Record<string, string> = {
   general: "General question",
   pro: "Pro plan waitlist",
-  clinic: "Clinic plan",
+  clinic: "Teams plan", // key kept so existing links and the API stay valid
   privacy: "Privacy request",
   safety: "Safety concern",
 };

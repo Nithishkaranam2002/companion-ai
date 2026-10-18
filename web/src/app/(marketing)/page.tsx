@@ -88,7 +88,7 @@ const faqs = [
   },
   {
     q: "Is it free?",
-    a: "Yes. The Free plan includes up to 20 messages an hour, conversation history and mood tracking. Pro and Clinic plans are on our roadmap.",
+    a: "Yes. The Free plan includes up to 20 messages an hour, conversation history and mood tracking. Pro and Teams plans are on our roadmap.",
   },
 ];
 

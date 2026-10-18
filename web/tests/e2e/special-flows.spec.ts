@@ -43,6 +43,9 @@ test.describe("pricing", () => {
     await page.goto("/pricing");
     await expect(page.getByText("No payments are collected today.")).toBeVisible();
     await expect(page.getByText("Coming soon")).toHaveCount(2);
+    await expect(page.getByRole("heading", { name: "Teams" })).toBeVisible();
+    // A wellness service makes no compliance or clinical-product claims.
+    await expect(page.getByText(/business associate|\bBAA\b|HIPAA[- ]compliant|clinic plan/i)).toHaveCount(0);
     const plans = [
       { name: "Create a free account", note: "Email sign-in link. No card needed.", url: /\/login$/, topic: null },
       { name: "Join the Pro waitlist", note: "Opens a short form. No payment.", url: /\/contact\?topic=pro$/, topic: "pro" },
@@ -55,6 +58,7 @@ test.describe("pricing", () => {
       await cta.click();
       await expect(page).toHaveURL(plan.url);
       if (plan.topic) await expect(page.getByLabel("Topic")).toHaveValue(plan.topic);
+      if (plan.topic === "clinic") await expect(page.getByLabel("Topic").locator("option:checked")).toHaveText("Teams plan");
       await expect(page.getByText(/checkout|card number/i)).toHaveCount(0);
     }
     void problems;
