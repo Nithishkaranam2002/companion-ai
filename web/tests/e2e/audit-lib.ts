@@ -220,6 +220,7 @@ export type Result = {
   result: "pass" | "fail";
   detail: string;
   attempt?: number;
+  ts?: string; // when the check finished, to line failures up with network errors in the log
 };
 
 /** Tags visible interactive elements under `scope` with data-audit ids and describes them. */
@@ -488,7 +489,9 @@ export type SweepOptions = {
   viewport: string;
   scheme: string;
   includeChrome: boolean;
-  reset: () => Promise<void>; // restore cookies/storage between elements
+  reset: (current: Page) => Promise<void>; // restore cookies/storage between elements
+  /** Opens a replacement page (with the same error listeners) after a step got stuck. */
+  freshPage: () => Promise<Page>;
   skip?: (item: Item) => string | null; // reason to skip (covered by a dedicated test)
   maxDepth?: number;
 };
@@ -502,27 +505,47 @@ async function findAgain(page: Page, scope: string | null, depth: number, key: s
   }
 }
 
+/** One element's whole check gets this long. A browser call that never returns (seen when this
+ *  machine's network dropped) then fails that element alone instead of hanging the whole test. */
+export const ELEMENT_TIMEOUT_MS = 30_000;
+
+class StepTimeout extends Error {}
+
+function withTimeout<T>(work: Promise<T>, ms: number, what: () => string): Promise<T> {
+  work.catch(() => {}); // the abandoned call may reject later, when its page is closed
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new StepTimeout(`step timed out after ${ms / 1000}s while: ${what()}`)), ms);
+  });
+  return Promise.race([work, limit]).finally(() => clearTimeout(timer));
+}
+
+const firstLine = (e: unknown) => (e as Error).message.split("\n")[0];
+
 /** Sweeps one page; returns one result per element (nested dialogs/menus included). */
 export async function sweepPage(o: SweepOptions): Promise<Result[]> {
   const results: Result[] = [];
   let last = Date.now();
+  let step = "starting";
+  const push = (r: Omit<Result, "page" | "state" | "viewport" | "scheme" | "ts">) =>
+    results.push({ page: o.path, state: o.role, viewport: o.viewport, scheme: o.scheme, ...r, ts: new Date().toISOString() });
   const record = (item: Item, chain: string[], e: Effect) => {
     if (process.env.AUDIT_DEBUG) console.log(`${Date.now() - last}ms ${e.ok ? "ok  " : "FAIL"} ${describe(item)}: ${e.detail}`);
     last = Date.now();
-    results.push({
-      page: o.path,
-      state: o.role,
-      viewport: o.viewport,
-      scheme: o.scheme,
-      element: [...chain, describe(item)].join(" › "),
-      kind: e.kind,
-      result: e.ok ? "pass" : "fail",
-      detail: e.detail,
-    });
+    push({ element: [...chain, describe(item)].join(" › "), kind: e.kind, result: e.ok ? "pass" : "fail", detail: e.detail });
+  };
+
+  /** Swaps in a new page after a stuck step; closing the old one is itself time-limited. */
+  const replacePage = async () => {
+    const stuck = o.page;
+    await Promise.race([stuck.close({ runBeforeUnload: false }).catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
+    o.page = await o.freshPage();
   };
 
   const load = async () => {
-    await o.reset();
+    step = "resetting cookies";
+    await o.reset(o.page);
+    step = `loading ${o.path}`;
     // One retry absorbs a dropped connection; a page that really fails to load fails both times.
     await o.page.goto(o.path).catch(async () => {
       await o.page.waitForTimeout(2000);
@@ -533,9 +556,10 @@ export async function sweepPage(o: SweepOptions): Promise<Result[]> {
   };
 
   /** Re-opens a chain of layers (by stable keys) and returns the scope selector of the last one. */
-  const reopen = async (chain: string[]) => {
+  const reopen = async (chain: string[], names: string[]) => {
     let scope: string | null = null;
     for (const [depth, key] of chain.entries()) {
+      step = `reopening ${names[depth]}`;
       const items = await tagItems(o.page, scope, `d${depth}-`);
       const item = items.find((i) => i.key === key);
       if (!item) return undefined;
@@ -547,9 +571,59 @@ export async function sweepPage(o: SweepOptions): Promise<Result[]> {
     return scope;
   };
 
+  /** Reload, reopen any parent menus, find the element again and exercise it. */
+  const check = async (listed: Item, chain: string[], chainNames: string[], depth: number): Promise<{ item: Item; effect: Effect }> => {
+    let s: string | null | undefined = null;
+    try {
+      await load();
+      s = depth ? await reopen(chain, chainNames) : null;
+    } catch (e) {
+      return { item: listed, effect: { kind: listed.role, detail: `page didn't load: ${firstLine(e)}`, ok: false } };
+    }
+    if (depth && s === undefined) return { item: listed, effect: { kind: listed.role, detail: "could not reopen its menu/dialog", ok: false } };
+    // Lists, forms and sidebars render after their data loads: wait for the element to come back.
+    step = "finding the element again";
+    const fresh = await findAgain(o.page, s ?? null, depth, listed.key);
+    if (!fresh) return { item: listed, effect: { kind: listed.role, detail: "element missing after reload (waited 8s)", ok: false } };
+    const loc = o.page.locator(`[data-audit="${fresh.id}"]`);
+    try {
+      // Focus first: some controls (the skip link, hover-revealed icons) only appear on focus.
+      step = "focusing it";
+      const focused = await loc.evaluate(
+        (el) => {
+          (el as HTMLElement).focus();
+          return document.activeElement === el;
+        },
+        undefined,
+        { timeout: 3000 },
+      );
+      step = "scrolling it into view";
+      await loc.scrollIntoViewIfNeeded({ timeout: 10_000 });
+      step = "checking the mouse can reach it";
+      await loc.click({ trial: true, timeout: 10_000 }); // the mouse can reach it (not covered)
+      step = "pressing a key on it and waiting for the effect";
+      const effect = focused
+        ? fresh.invalidForm
+          ? { kind: "submit", detail: "blocked until required fields are filled (browser shows which)", ok: true }
+          : await trigger(o.page, fresh, o.base, o.role, o.path, `s${depth}`)
+        : { kind: fresh.role, detail: "can't receive keyboard focus", ok: false };
+      return { item: fresh, effect };
+    } catch (e) {
+      return { item: fresh, effect: { kind: fresh.role, detail: `error: ${firstLine(e)}`, ok: false } };
+    }
+  };
+
   const sweep = async (chain: string[], chainNames: string[], scope: string | null) => {
     const depth = chain.length;
-    const items = await tagItems(o.page, scope, `d${depth}-`);
+    let items: Item[];
+    try {
+      step = "listing elements";
+      items = await withTimeout(tagItems(o.page, scope, `d${depth}-`), ELEMENT_TIMEOUT_MS, () => step);
+    } catch (e) {
+      push({ element: [...chainNames, "(list elements)"].join(" › "), kind: "page", result: "fail", detail: firstLine(e) });
+      if (e instanceof StepTimeout) await replacePage();
+      return;
+    }
     for (const listed of items) {
       if (depth === 0 && listed.chrome && !o.includeChrome) continue;
       if (process.env.AUDIT_ONLY && depth === 0 && !new RegExp(process.env.AUDIT_ONLY).test(listed.key)) continue;
@@ -567,65 +641,29 @@ export async function sweepPage(o: SweepOptions): Promise<Result[]> {
         record(listed, chainNames, pre);
         continue;
       }
-      let s: string | null | undefined = null;
+      let outcome: { item: Item; effect: Effect };
       try {
-        await load();
-        s = depth ? await reopen(chain) : null;
+        outcome = await withTimeout(check(listed, chain, chainNames, depth), ELEMENT_TIMEOUT_MS, () => step);
       } catch (e) {
-        record(listed, chainNames, { kind: listed.role, detail: `page didn't load: ${(e as Error).message.split("\n")[0]}`, ok: false });
-        continue;
+        // Stuck: fail this element only, then carry on with a fresh page.
+        outcome = { item: listed, effect: { kind: listed.role, detail: firstLine(e), ok: false } };
+        if (e instanceof StepTimeout) await replacePage();
       }
-      if (depth && s === undefined) {
-        record(listed, chainNames, { kind: listed.role, detail: "could not reopen its menu/dialog", ok: false });
-        continue;
-      }
-      // Lists, forms and sidebars render after their data loads: wait for the element to come back.
-      const fresh = await findAgain(o.page, s ?? null, depth, listed.key);
-      if (!fresh) {
-        record(listed, chainNames, { kind: listed.role, detail: "element missing after reload (waited 8s)", ok: false });
-        continue;
-      }
-      const loc = o.page.locator(`[data-audit="${fresh.id}"]`);
-      let effect: Effect;
-      try {
-        // Focus first: some controls (the skip link, hover-revealed icons) only appear on focus.
-        const focused = await loc.evaluate(
-          (el) => {
-            (el as HTMLElement).focus();
-            return document.activeElement === el;
-          },
-          undefined,
-          { timeout: 3000 },
-        );
-        await loc.scrollIntoViewIfNeeded({ timeout: 10_000 });
-        await loc.click({ trial: true, timeout: 10_000 }); // the mouse can reach it (not covered)
-        effect = focused
-          ? fresh.invalidForm
-            ? { kind: "submit", detail: "blocked until required fields are filled (browser shows which)", ok: true }
-            : await trigger(o.page, fresh, o.base, o.role, o.path, `s${depth}`)
-          : { kind: fresh.role, detail: "can't receive keyboard focus", ok: false };
-      } catch (e) {
-        effect = { kind: fresh.role, detail: `error: ${(e as Error).message.split("\n")[0]}`, ok: false };
-      }
-      record(fresh, chainNames, effect);
-      if (effect.opened && depth < (o.maxDepth ?? 3)) {
-        await sweep([...chain, fresh.key], [...chainNames, describe(fresh)], effect.opened);
+      record(outcome.item, chainNames, outcome.effect);
+      if (outcome.effect.opened && depth < (o.maxDepth ?? 3)) {
+        await sweep([...chain, outcome.item.key], [...chainNames, describe(outcome.item)], outcome.effect.opened);
       }
     }
   };
 
   try {
-    await load();
+    await withTimeout(load(), ELEMENT_TIMEOUT_MS * 2, () => step);
   } catch (e) {
-    results.push({ page: o.path, state: o.role, viewport: o.viewport, scheme: o.scheme, element: "page load", kind: "page", result: "fail", detail: (e as Error).message.split("\n")[0] });
+    push({ element: "page load", kind: "page", result: "fail", detail: firstLine(e) });
     return results;
   }
   const overflow = await o.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  results.push({
-    page: o.path,
-    state: o.role,
-    viewport: o.viewport,
-    scheme: o.scheme,
+  push({
     element: "page layout",
     kind: "layout",
     result: overflow > 1 ? "fail" : "pass",

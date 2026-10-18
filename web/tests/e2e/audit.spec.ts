@@ -70,6 +70,14 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
           });
           const cookies = await context.cookies();
           const problems = watchErrors(page);
+          // A replacement page (after a stuck step) reports into the same list.
+          const freshPage = async () => {
+            const next = await context.newPage();
+            const more = watchErrors(next);
+            const push = more.push.bind(more);
+            more.push = (...items: string[]) => (problems.push(...items), push(...items));
+            return next;
+          };
           if (process.env.AUDIT_DEBUG_401) {
             const t0 = Date.now();
             page.on("request", (r) => {
@@ -98,12 +106,13 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
             viewport: info.project.name,
             scheme,
             includeChrome: CHROME_PAGES.has(path),
-            reset: async () => {
+            freshPage,
+            reset: async (current) => {
               if (process.env.AUDIT_DEBUG_401) console.log(`reset (page was ${page.url()})`);
               resetData();
               await context.clearCookies();
               if (cookies.length) await context.addCookies(cookies);
-              for (const p of context.pages()) if (p !== page) await p.close();
+              for (const p of context.pages()) if (p !== current) await p.close();
             },
             skip: (item: Item) => DEDICATED.find(([re]) => re.test(item.key))?.[1] ?? null,
           });
