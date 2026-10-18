@@ -40,6 +40,8 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isProtected = PROTECTED.some((p) => path === p || path.startsWith(`${p}/`));
   if (!signedIn && isProtected) {
+    // Next strips its router headers before the proxy, so prefetches look like navigations here.
+    // Links to private pages therefore don't prefetch (see prefetchFor in lib/site.ts).
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = `?next=${encodeURIComponent(path)}`;

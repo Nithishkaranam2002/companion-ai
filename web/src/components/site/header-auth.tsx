@@ -27,7 +27,7 @@ export function HeaderAuth({ compact = false }: { compact?: boolean }) {
   if (state === "signed-in") {
     return (
       <Button asChild size={compact ? "sm" : "default"}>
-        <Link href="/chat">Open app</Link>
+        <Link href="/chat" prefetch={false}>Open app</Link>
       </Button>
     );
   }

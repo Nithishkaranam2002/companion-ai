@@ -374,3 +374,19 @@ authedTest.describe("when the session ends under an open page", () => {
     expect(unexpected).toEqual([]);
   });
 });
+
+test("signed out, links to private pages aren't prefetched (no cached redirects, no 404s)", async ({ page, problems }) => {
+  const privateRequests: string[] = [];
+  page.on("request", (r) => {
+    const path = new URL(r.url()).pathname;
+    if (/^\/(chat|mood|admin)(\/|$)/.test(path)) privateRequests.push(r.url());
+  });
+  await page.goto("/");
+  await page.getByRole("contentinfo").scrollIntoViewIfNeeded(); // footer: Chat, Mood tracker
+  await page.getByRole("contentinfo").getByRole("link", { name: "Chat" }).hover();
+  await page.waitForTimeout(1500);
+  expect(privateRequests).toEqual([]);
+  await page.getByRole("contentinfo").getByRole("link", { name: "Chat" }).click();
+  await expect(page).toHaveURL(/\/login\?next=%2Fchat$/); // the real click still goes to sign-in
+  void problems;
+});

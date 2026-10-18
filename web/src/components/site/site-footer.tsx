@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { CurrentYear } from "@/components/site/current-year";
 import { Logo } from "@/components/site/logo";
-import { crisisLinks, footerNav, site } from "@/lib/site";
+import { crisisLinks, footerNav, prefetchFor, site } from "@/lib/site";
 
 export function SiteFooter() {
   return (
@@ -28,6 +28,7 @@ export function SiteFooter() {
                 <li key={link.href}>
                   <Link
                     href={link.href}
+                    prefetch={prefetchFor(link.href)}
                     className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {link.label}

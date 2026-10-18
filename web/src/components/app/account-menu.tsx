@@ -41,14 +41,14 @@ export function AccountMenu() {
         <DropdownMenuLabel className="truncate font-normal text-muted-foreground">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link href="/chat"><MessageCircle className="size-4" /> Chat</Link>
+          <Link href="/chat" prefetch={false}><MessageCircle className="size-4" /> Chat</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/mood"><SmilePlus className="size-4" /> Mood tracker</Link>
+          <Link href="/mood" prefetch={false}><SmilePlus className="size-4" /> Mood tracker</Link>
         </DropdownMenuItem>
         {me?.is_admin ? (
           <DropdownMenuItem asChild>
-            <Link href="/admin"><Shield className="size-4" /> Admin</Link>
+            <Link href="/admin" prefetch={false}><Shield className="size-4" /> Admin</Link>
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />

@@ -136,7 +136,7 @@ export function AdminDashboard() {
             <h1 className="mt-4 text-3xl font-semibold">Admins only</h1>
             <p className="mt-2 text-muted-foreground">This page is for the CompanionAI team. Your account doesn&apos;t have access.</p>
             <Button asChild className="mt-6">
-              <Link href="/chat">Back to chat</Link>
+              <Link href="/chat" prefetch={false}>Back to chat</Link>
             </Button>
           </div>
         ) : (

@@ -7,6 +7,7 @@ import { AccountMenu } from "@/components/app/account-menu";
 import { Logo } from "@/components/site/logo";
 import { ThemeToggle } from "@/components/site/theme-toggle";
 import { useMe } from "@/hooks/use-me";
+import { prefetchFor } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 export function AppTopbar({ leading }: { leading?: React.ReactNode }) {
@@ -29,6 +30,7 @@ export function AppTopbar({ leading }: { leading?: React.ReactNode }) {
           <Link
             key={l.href}
             href={l.href}
+            prefetch={prefetchFor(l.href)}
             aria-current={pathname.startsWith(l.href) ? "page" : undefined}
             className={cn(
               "rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:px-2.5",

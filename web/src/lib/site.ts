@@ -10,6 +10,17 @@ export const site = {
 
 export type NavLink = { href: string; label: string };
 
+const PRIVATE_PATHS = ["/chat", "/mood", "/admin"];
+
+/** Links to private pages never prefetch. Signed out, a prefetch is answered with the sign-in
+ *  redirect, which Next caches (a later click replays it) and follows with segment requests the
+ *  sign-in page can't serve (404s). The proxy can't tell prefetches apart: Next strips its router
+ *  headers first. These pages render on the client anyway, so prefetching gains little. */
+export function prefetchFor(href: string): false | undefined {
+  const path = href.split(/[?#]/)[0];
+  return PRIVATE_PATHS.some((p) => path === p || path.startsWith(`${p}/`)) ? false : undefined;
+}
+
 export const mainNav: NavLink[] = [
   { href: "/#how-it-works", label: "How it works" },
   { href: "/safety", label: "Safety" },
