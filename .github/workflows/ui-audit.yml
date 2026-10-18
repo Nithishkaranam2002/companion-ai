@@ -1,44 +1,85 @@
 name: UI audit
 
-# The full click-through matrix: every element, 4 account states, desktop + mobile, light + dark.
-# Mocked API (no model calls); needs the Supabase repository secrets for real sign-in.
+# The full click-through audit (every element, 4 account states, desktop + mobile, light + dark)
+# against the deployed site, from GitHub's network. Chat replies are mocked (no model calls);
+# sign-in uses real Supabase test users that the run creates and deletes.
+#
+# Security: this workflow uses repository secrets, so it only runs on a schedule or by hand,
+# never for pull requests (forks of this public repo must not reach the secrets).
 on:
   schedule:
     - cron: "17 7 * * *"
   workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Site to audit"
+        default: "https://companion-ai-tawny.vercel.app"
+        required: true
+      api_url:
+        description: "API the site calls (requests to it are mocked in the browser)"
+        default: "https://companionai-wellness-api.onrender.com"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-audit
+  cancel-in-progress: false
 
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: web
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      E2E_BASE_URL: ${{ inputs.base_url || 'https://companion-ai-tawny.vercel.app' }}
+      NEXT_PUBLIC_API_URL: ${{ inputs.api_url || 'https://companionai-wellness-api.onrender.com' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - name: Audit
-        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' }}
-        run: AUDIT=1 npx playwright test audit special-flows --workers=4
+
+      - name: Audit + special flows
+        # Secrets are scoped to this step only. Nothing here echoes env or enables shell tracing.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AUDIT: "1"
+          AUDIT_DEBUG_401: "1" # logs API request paths, frame URLs and whether a token was sent (never its value)
+        run: |
+          set -o pipefail
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then echo "::error::Add the Supabase repository secrets first"; exit 1; fi
+          # GitHub masks registered secrets only; scrub sign-in link hashes, JWTs and session cookie
+          # values (test sessions) from the console and the saved log too.
+          npx playwright test audit special-flows --workers=4 --reporter=line 2>&1 \
+            | sed -E 's/(token_hash=)[^&" ]+/\1[redacted]/g; s/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/[jwt redacted]/g; s/(base64-)[A-Za-z0-9_+\/=-]{20,}/\1[redacted]/g' \
+            | tee ../audit-run.log
+
       - name: Report
-        if: always() && env.NEXT_PUBLIC_SUPABASE_URL != ''
-        run: npm run audit:report
+        if: always()
+        # Shell variables, not ${{ }} expressions, so an input can't inject into the command.
+        run: npm run audit:report -- "GitHub Actions run $GITHUB_RUN_ID against $E2E_BASE_URL"
+
+      # Results only: never test-results/ or playwright-report/ (traces hold cookies and tokens),
+      # and never .e2e-state/auth (sessions; global teardown deletes it anyway).
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ui-audit
+          name: ui-audit-results
+          retention-days: 14
           path: |
+            web/.e2e-state/audit/
             tests/ui-audit.md
             tests/ui-inventory.md
-            web/playwright-report
+            audit-run.log
