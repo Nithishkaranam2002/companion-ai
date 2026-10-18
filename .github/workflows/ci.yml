@@ -5,11 +5,16 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   api:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.7.22"
@@ -22,13 +27,10 @@ jobs:
     defaults:
       run:
         working-directory: web
-    env:
-      # Public values (safe in the browser). Set as repository secrets to enable e2e tests.
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -38,6 +40,53 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
-      - name: Playwright (needs Supabase secrets)
-        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' }}
-        run: npx playwright install --with-deps chromium && npm run test:e2e
+
+  # Playwright against a local build, with real sign-in on the production Supabase project.
+  # Pull requests from forks get no secrets, so this job skips itself there.
+  e2e:
+    needs: web
+    runs-on: ubuntu-latest
+    # Shared with ui-audit.yml: never two e2e runs against production Supabase at once
+    # (its auth rate limits are per IP and per project).
+    concurrency:
+      group: supabase-e2e
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: web
+    # Secrets are given only to the steps that need them (never to npm install scripts).
+    env:
+      HAS_KEYS: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}
+      # Tags every user this job creates, so the cleanup step finds them even after a cancel.
+      E2E_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        if: ${{ env.HAS_KEYS == 'true' }}
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Build
+        if: ${{ env.HAS_KEYS == 'true' }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+        run: npm run build
+      - name: Playwright
+        if: ${{ env.HAS_KEYS == 'true' }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run test:e2e
+      - name: Delete this run's test users (also after failure or cancel)
+        if: ${{ always() && env.HAS_KEYS == 'true' }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/e2e-cleanup.mjs --run "$E2E_RUN_ID"
