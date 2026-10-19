@@ -63,19 +63,18 @@ test.describe("@live demo mode", () => {
     const errors: string[] = [];
     page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
     page.on("response", (r) => r.status() >= 400 && errors.push(`${r.status()} ${r.request().method()} ${r.url()}`));
-    // The demo button does a full navigation to /chat, so read the /me that /chat makes (an earlier
-    // one from the landing page loses its body when the page unloads).
-    const me = page.waitForResponse(
-      (r) => new URL(r.url()).pathname === "/me" && r.ok() && new URL(r.frame().url()).pathname === "/chat",
-      { timeout: 60_000 },
-    );
+    // The demo button does a full navigation to /chat, which discards the body of a /me still in
+    // flight on the landing page; read each body as it arrives and keep the one that survives.
+    let demoUser: { id: string; is_anonymous: boolean } | undefined;
+    page.on("response", (r) => {
+      if (new URL(r.url()).pathname === "/me" && r.ok()) r.json().then((u) => (demoUser = u), () => {});
+    });
     await page.goto(`${baseURL}/`);
     const signup = captureAnonymousUser(page);
     await page.getByRole("button", { name: "Try it free — no sign-up" }).first().click();
     deleteLater(await signup);
     await expect(page).toHaveURL(/\/chat$/, { timeout: 30_000 });
-    const demoUser = (await (await me).json()) as { id: string; is_anonymous: boolean };
-    expect(demoUser.is_anonymous).toBe(true);
+    await expect.poll(() => demoUser?.is_anonymous, { timeout: 60_000 }).toBe(true);
     await expect(page.getByText(/Demo mode:\s*10\s*of 10 messages left/)).toBeVisible();
     await page.getByLabel("Message CompanionAI").fill("Any tips for calming down before a big presentation?");
     await page.getByRole("button", { name: "Send message" }).click();

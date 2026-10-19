@@ -55,11 +55,24 @@ export async function cleanupUsers() {
 
 /** Anonymous (demo) sign-ups create real auth users; resolves with the new user's id. */
 export function captureAnonymousUser(page: Page): Promise<string> {
-  return page
-    .waitForResponse((r) => r.url().includes("/auth/v1/signup") && r.request().method() === "POST" && r.ok(), {
-      timeout: 30_000,
-    })
-    .then(async (r) => ((await r.json()) as { user: { id: string } }).user.id);
+  // Pass the real sign-up through, tagged as a test user, and read its id here: the demo button
+  // navigates as soon as sign-up returns, so the page's own response body is gone by then.
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("no anonymous sign-up within 30s")), 30_000);
+    void page.route("**/auth/v1/signup**", async (route) => {
+      const req = route.request();
+      if (req.method() !== "POST") return route.continue();
+      const body = JSON.parse(req.postData() || "{}") as { data?: object };
+      body.data = { ...body.data, ...testUserTag() };
+      const res = await route.fetch({ postData: JSON.stringify(body) });
+      const json = (await res.json()) as { user?: { id: string } };
+      if (json.user?.id) {
+        clearTimeout(timer);
+        resolve(json.user.id);
+      }
+      await route.fulfill({ response: res, json });
+    });
+  });
 }
 
 /** A real anonymous (demo) session created server-side, so tests can hand it to the browser
