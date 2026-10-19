@@ -108,7 +108,11 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
             includeChrome: CHROME_PAGES.has(path),
             freshPage,
             reset: async (current) => {
-              if (process.env.AUDIT_DEBUG_401) console.log(`reset (page was ${page.url()})`);
+              if (process.env.AUDIT_DEBUG_401) console.log(`reset (page was ${current.url()})`);
+              // Leave the page first: a page still open (e.g. /chat after a demo button) would keep
+              // fetching with the cookies being swapped underneath it, and its 401 sign-out would
+              // land in the middle of the next element's check.
+              await current.goto("about:blank").catch(() => {});
               resetData();
               await context.clearCookies();
               if (cookies.length) await context.addCookies(cookies);
@@ -116,20 +120,35 @@ for (const role of ["logged-out", "demo", "user", "admin"] as const) {
             },
             skip: (item: Item) => DEDICATED.find(([re]) => re.test(item.key))?.[1] ?? null,
           });
+          // The 404 page answers 404 by design; everything else must load cleanly.
+          const unexpected =
+            path === "/no-such-page"
+              ? problems.filter((p) => !p.includes("/no-such-page") && !/status of 404 \((Not Found)?\)/.test(p))
+              : problems;
+          results.push({
+            page: path,
+            state: role,
+            viewport: info.project.name,
+            scheme,
+            element: "console and network",
+            kind: "console",
+            result: unexpected.length ? "fail" : "pass",
+            detail: unexpected.length
+              ? [...new Set(unexpected.map((p) => p.replace(/\?[^ ]*/g, "")))].join("; ")
+              : "no console errors or failed requests",
+            ts: new Date().toISOString(),
+          });
           const slug = path.replace(/[^a-z0-9]+/gi, "_") || "root";
           saveResults(
             results.map((r) => ({ ...r, attempt: info.retry })),
             `.e2e-state/audit/${process.env.E2E_RUN_ID ?? "local"}/${info.project.name}-${role}-${scheme}-${slug}-r${info.retry}.jsonl`,
           );
 
-          const failures = results.filter((r) => r.result === "fail").map((r) => `${r.element}: ${r.detail}`);
-          expect(results.length, "found interactive elements").toBeGreaterThan(0);
+          const failures = results
+            .filter((r) => r.result === "fail" && r.kind !== "console")
+            .map((r) => `${r.element}: ${r.detail}`);
+          expect(results.length, "found interactive elements").toBeGreaterThan(1);
           expect(failures, "every element does something visible and correct").toEqual([]);
-          // The 404 page answers 404 by design; everything else must load cleanly.
-          const unexpected =
-            path === "/no-such-page"
-              ? problems.filter((p) => !p.includes("/no-such-page") && !/status of 404 \((Not Found)?\)/.test(p))
-              : problems;
           expect(unexpected, "no console errors, 404s or failed requests").toEqual([]);
         });
       }
