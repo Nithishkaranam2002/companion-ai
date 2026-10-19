@@ -186,7 +186,7 @@ uv run python -m companion.ingest --snapshot   # re-embed and refresh data/index
 
 ```bash
 scripts/check.sh            # the pre-commit gate: ruff, pytest, web lint + typecheck + build, secret scan
-uv run --all-groups pytest  # 139 Python tests, offline (fake LLM, in-memory Chroma and store)
+uv run --all-groups pytest  # 141 Python tests, offline (fake LLM, in-memory Chroma and store)
 cd web && npm run test:e2e  # Playwright: every page and link, a11y (axe), app flows with a mocked API
 ```
 
@@ -195,9 +195,6 @@ Test users are created and deleted through the Supabase admin API (`SUPABASE_SER
 in `web/.env.local`), and never left in the real queue.
 
 ```bash
-# Against production, including @live specs that hit the real API and model (a few cents):
-E2E_BASE_URL=https://companion-ai-tawny.vercel.app \
-NEXT_PUBLIC_API_URL=https://companionai-wellness-api.onrender.com LIVE=1 npm run test:e2e
 # Refresh README screenshots:
 SCREENSHOTS=1 E2E_BASE_URL=https://companion-ai-tawny.vercel.app npx playwright test screenshots
 ```
@@ -212,20 +209,57 @@ or dialog (whose contents are then tested too), or update the page. Console erro
 mocked statefully, so the audit makes no model calls and writes nothing. Supabase sign-in stays real, using
 one shared test user and one demo session per run.
 
+**Latest production audit** ([GitHub Actions run 39194531619](https://github.com/Nithishkaranam2002/companion-ai/actions/runs/39194531619), 2026-10-19):
+**1792 of 1792 checks passed** on 124 page × state × viewport × theme combinations (176 Playwright tests,
+no retries needed). Every page also has a "console and network" row, so a stray 401 or console error shows up
+in the table. The first production run had 6 failures; [`tests/ui-audit.md`](tests/ui-audit.md) lists each
+one with its cause and fix, plus every fix the audit led to. [`tests/ui-inventory.md`](tests/ui-inventory.md)
+lists every clickable element by page and state.
+
+`special-flows.spec.ts` covers what a generic sweep can't judge: what each pricing button promises, loading
+states, rename/delete/new chat, mood logging, the demo running out, an expired session, and Back after
+signing in and out. It's part of `npm run test:e2e`, so it runs on every push.
+
+Run the audit locally (against `npm run start`, or set `E2E_BASE_URL` for a deployed site):
+
 ```bash
-cd web && npm run test:audit        # ~45 min; writes tests/ui-audit.md (results) and tests/ui-inventory.md
+cd web && npm run test:audit        # ~45 min locally; writes tests/ui-audit.md and tests/ui-inventory.md
+E2E_BASE_URL=https://companion-ai-tawny.vercel.app \
+NEXT_PUBLIC_API_URL=https://companionai-wellness-api.onrender.com npm run test:audit
+npm run audit:report                # rebuild the two reports from the latest run's results
 ```
 
-[`tests/ui-audit.md`](tests/ui-audit.md) has the latest results table and the fixes the audit led to;
-[`tests/ui-inventory.md`](tests/ui-inventory.md) lists every clickable element by page and state.
-`special-flows.spec.ts` covers what a generic sweep can't judge: what each pricing button promises, loading
-states, rename/delete/new chat, mood logging, the demo running out, and Back after signing in and out.
-It runs on every push; the full audit runs nightly (`.github/workflows/ui-audit.yml`) and on demand.
+Or on GitHub: **Actions → UI audit → Run workflow** (or `gh workflow run ui-audit.yml`). It also runs
+nightly. It takes about 20 minutes and uploads `ui-audit-results` (the reports, per-element results and a
+scrubbed log; never traces, which hold session cookies). It needs three repository secrets:
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SERVICE_ROLE_KEY`. It only
+runs on a schedule or by hand, never for pull requests, and shares a concurrency group with CI's
+Playwright job, so the two never hit production Supabase at once.
 
-The live specs cover a cited answer, a medication question (caring refusal, no dose), a crisis
-message (988 banner + ticket), and the demo button from the landing page (counter 10 → 9).
-Last production run: **101 passed, 7 skipped** (the four live specs on mobile, the local-only
-admin spec on desktop, and two desktop-only checks: skip link and external links).
+**Test users.** Every user a test creates is tagged (`e2e-…@example.com` and/or
+`user_metadata.e2e` plus the run id). Each run deletes its own users in teardown, and CI also runs
+`node scripts/e2e-cleanup.mjs --run <id>` as an always-run step, so a failed or cancelled job cleans up
+too. The script can only match tagged test users, never real accounts. Add `--dry-run` to list without
+deleting, or use `--stale-hours N` for leftovers.
+
+### Live specs (real API)
+
+```bash
+curl https://companionai-wellness-api.onrender.com/health   # wake the free instance first; wait for "ok"
+cd web && E2E_BASE_URL=https://companion-ai-tawny.vercel.app \
+NEXT_PUBLIC_API_URL=https://companionai-wellness-api.onrender.com \
+E2E_ADMIN_EMAIL=you@example.com npm run test:e2e:live
+```
+
+They cover:
+- a cited answer, a medication question (caring refusal, no dose) and a crisis message (988 banner + ticket);
+- the landing-page demo button (counter 10 → 9);
+- a used-up demo (sign-up prompt, and the API refuses with 429);
+- renaming and deleting a saved conversation;
+- a mood check-in (redacted note, chart, table);
+- the admin queue: see, resolve and file a ticket.
+
+Only the first group calls the model. **Latest run (2026-10-19): all 6 passed** against production.
 
 ## Evals
 
@@ -347,8 +381,11 @@ Secrets live only in the Render and Vercel dashboards and local `.env` files, wh
 
 ### CI
 GitHub Actions runs ruff + pytest (all dependency groups) and web lint, typecheck and build on every push.
-Add the repository secrets `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and
-`SUPABASE_SERVICE_ROLE_KEY` to also run Playwright.
+With the repository secrets `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and
+`SUPABASE_SERVICE_ROLE_KEY`, an `e2e` job also runs Playwright against a local build with real Supabase
+sign-in (secrets go only to the steps that need them, and forks' pull requests get none, so it skips).
+Both workflows are read-only (`permissions: contents: read`). See [Click-through audit](#click-through-audit)
+for the nightly production audit and test-user cleanup.
 
 ## Layout
 ```
