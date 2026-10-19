@@ -360,9 +360,10 @@ Secrets live only in the Render and Vercel dashboards and local `.env` files, wh
    running and picks it up on the next deploy.
 
 ### 3. Web on Vercel
-1. Import the repo with **Root Directory `web`** (framework: Next.js). This project was first
-   deployed with the CLI from `web/` (`vercel deploy --prod`), so set Root Directory to `web`
-   before connecting Git for auto-deploys.
+1. Import the repo with **Root Directory `web`** (framework: Next.js). Every push to `main` then
+   deploys production, and other branches get preview deploys. To deploy by hand with the CLI,
+   run `vercel deploy --prod` from the **repo root**, not from `web/` (with Root Directory set,
+   Vercel would look for `web/web`).
 2. **Settings → Environment Variables**:
 
 | Variable | Environments | Value |
