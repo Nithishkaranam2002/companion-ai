@@ -1,47 +1,106 @@
-[
-  {
-    "title": "Demo buttons below the fold sent people to sign-in",
-    "match": "^/ button \"Start the demo\"",
-    "fix": "Scrolling to the bottom \"Start the demo\" button brought the footer's Chat link into view; Next.js prefetched /chat while logged out and cached the sign-in redirect, which the button then replayed. Demo buttons now do a full navigation after the demo session starts."
-  },
-  {
-    "title": "Conversations couldn't be renamed",
-    "match": "Options for conversation",
-    "fix": "Added an options menu per conversation (Rename / Delete), a rename dialog with a saving state, and PATCH /conversations/{id} (titles are redacted like everything else stored)."
-  },
-  {
-    "title": "Keyboard focus was lost when the rename/delete dialogs opened",
-    "match": "› menuitem \"(Rename|Delete)\"",
-    "fix": "The dialog opened while the menu was still closing, and the menu took focus back, leaving keyboard users on the page body. Dialogs now open after the menu has closed, so focus lands in the Name field / on the confirm buttons."
-  },
-  {
-    "title": "\"New chat\" on an empty chat and clicking the open conversation did nothing",
-    "match": "(button \"New chat\"|button \"Feeling overwhelmed tonight)",
-    "fix": "Both now put the cursor in the message box (and close the drawer on mobile)."
-  },
-  {
-    "title": "A used-up demo only showed a disabled box after a reload",
-    "match": "^/chat .*Create a free account",
-    "fix": "\"Demo complete. Create a free account to keep chatting\" now shows whenever the demo is used up, not only right after the last message."
-  },
-  {
-    "title": "Back after signing in showed the sign-in form again",
-    "match": "^/login ",
-    "fix": "The proxy sends signed-in people from /login straight on to where they were going (demo users can still reach it to create an account)."
-  },
-  {
-    "title": "Back after signing out could show a private page, and sign-out signed out every device",
-    "match": "menuitem \"Sign out\"",
-    "fix": "Sign-out is now for this browser only and replaces the history entry with a full navigation; private pages are sent with Cache-Control: no-store so Back re-checks the session and goes to sign-in."
-  },
-  {
-    "title": "Deleting a conversation had no working state",
-    "match": "alertdialog \"Delete",
-    "fix": "The confirm button shows a spinner and both buttons are disabled until the delete finishes."
-  },
-  {
-    "title": "Pricing buttons didn't say what happens next",
-    "match": "^/pricing link",
-    "fix": "Each plan button now has a note: \"Email sign-in link. No card needed.\" or \"Opens a short form. No payment.\" (no checkout exists)."
-  }
-]
+{
+  "fixes": [
+    {
+      "title": "Demo buttons below the fold sent people to sign-in",
+      "match": "^/ button \"Start the demo\"",
+      "fix": "Scrolling to the bottom \"Start the demo\" button brought the footer's Chat link into view; Next.js prefetched /chat while logged out and cached the sign-in redirect, which the button then replayed. Demo buttons now do a full navigation after the demo session starts."
+    },
+    {
+      "title": "Conversations couldn't be renamed",
+      "match": "Options for conversation",
+      "fix": "Added an options menu per conversation (Rename / Delete), a rename dialog with a saving state, and PATCH /conversations/{id} (titles are redacted like everything else stored)."
+    },
+    {
+      "title": "Keyboard focus was lost when the rename/delete dialogs opened",
+      "match": "› menuitem \"(Rename|Delete)\"",
+      "fix": "The dialog opened while the menu was still closing, and the menu took focus back, leaving keyboard users on the page body. Dialogs now open after the menu has closed, so focus lands in the Name field / on the confirm buttons."
+    },
+    {
+      "title": "\"New chat\" on an empty chat and clicking the open conversation did nothing",
+      "match": "(button \"New chat\"|button \"Feeling overwhelmed tonight)",
+      "fix": "Both now put the cursor in the message box (and close the drawer on mobile)."
+    },
+    {
+      "title": "A used-up demo only showed a disabled box after a reload",
+      "match": "^/chat .*Create a free account",
+      "fix": "\"Demo complete. Create a free account to keep chatting\" now shows whenever the demo is used up, not only right after the last message."
+    },
+    {
+      "title": "Back after signing in showed the sign-in form again",
+      "match": "^/login ",
+      "fix": "The proxy sends signed-in people from /login straight on to where they were going (demo users can still reach it to create an account)."
+    },
+    {
+      "title": "Back after signing out could show a private page, and sign-out signed out every device",
+      "match": "menuitem \"Sign out\"",
+      "fix": "Sign-out is now for this browser only and replaces the history entry with a full navigation; private pages are sent with Cache-Control: no-store so Back re-checks the session and goes to sign-in."
+    },
+    {
+      "title": "Deleting a conversation had no working state",
+      "match": "alertdialog \"Delete",
+      "fix": "The confirm button shows a spinner and both buttons are disabled until the delete finishes."
+    },
+    {
+      "title": "Pricing buttons didn't say what happens next",
+      "match": "^/pricing link",
+      "fix": "Each plan button now has a note: \"Email sign-in link. No card needed.\" or \"Opens a short form. No payment.\" (no checkout exists)."
+    },
+    {
+      "title": "The mood slider had no accessible name",
+      "match": "^/mood .*slider",
+      "fix": "The slider thumb is now labelled \"Mood, 1 to 10\" and reads its value as \"N out of 10, <word>\"."
+    },
+    {
+      "title": "Admin tab text was below contrast on dark",
+      "match": "^/admin tab",
+      "fix": "Inactive tab text raised from 60% to 80% opacity (axe colour-contrast now passes in light and dark)."
+    },
+    {
+      "title": "The admin top bar scrolled sideways at 390 px",
+      "match": "^/admin page layout",
+      "fix": "The logo text hides below the small breakpoint, so the bar fits on phones."
+    },
+    {
+      "title": "An ended session showed an error instead of sign-in",
+      "match": "console and network",
+      "fix": "A 401 from the API now signs this browser out once and goes to /login?expired=1 with \"Your session ended\"; links to private pages no longer prefetch (a prefetched sign-in redirect 404'd). In the audit, the reset now leaves the page (about:blank) before swapping cookies, so a stale /chat page can't fire that 401 during the next check."
+    },
+    {
+      "title": "Pricing claimed a BAA for the clinic plan",
+      "match": "^/pricing ",
+      "fix": "The Clinic plan is now Teams (\"for workplaces and community groups\"), and the BAA line is \"Custom onboarding and admin controls\". Nothing on the site says HIPAA compliant."
+    }
+  ],
+  "original": [
+    {
+      "failure": "link \"NHS 111\" (and other external links) opened \"chromewebdata\" in the new tab",
+      "cause": "The audit runner's network blocked the outside site, so Chrome showed its error page; the link itself was right.",
+      "fix": "The audit stubs outside sites and checks the exact URL of the new tab; external-links.spec still checks that each site is reachable."
+    },
+    {
+      "failure": "Mood slider had no accessible name",
+      "cause": "Real accessibility bug.",
+      "fix": "Labelled the thumb \"Mood, 1 to 10\" with a spoken value (see fixes)."
+    },
+    {
+      "failure": "button \"Feeling overwhelmed tonight\" missing after reload",
+      "cause": "It is a conversation in the sidebar, which loads a moment after the page; the audit looked before it arrived.",
+      "fix": "The audit now waits up to 8 s for an element to come back after a reload."
+    },
+    {
+      "failure": "/pricing plan link timed out while scrolling into view",
+      "cause": "Not layout: an overlap check found nothing covering it in any of the 4 states. The run's network kept dropping (ERR_NETWORK_CHANGED).",
+      "fix": "Page loads retry once, each element has a 30 s limit with a fresh page, and the audit runs from GitHub Actions."
+    },
+    {
+      "failure": "link \"Contact us\" timed out while scrolling into view",
+      "cause": "Same network drop as above.",
+      "fix": "Same as above."
+    },
+    {
+      "failure": "/no-such-page logged \"status of 404 ()\"",
+      "cause": "Over HTTP/2 Chrome omits the \"Not Found\" text, so the 404-page allowance didn't match.",
+      "fix": "The allowance matches both spellings; any other 404 still fails."
+    }
+  ]
+}

@@ -23,7 +23,7 @@ const rows = all.filter((r) => (r.attempt ?? 0) === finalAttempt.get(pageKey(r))
 const retried = [...finalAttempt.values()].filter((a) => a > 0).length;
 
 // Fixes made during the audit, matched against failing or previously failing elements.
-const FIXES = JSON.parse(fs.readFileSync("scripts/audit-fixes.json", "utf8"));
+const { fixes: FIXES, original: ORIGINAL } = JSON.parse(fs.readFileSync("scripts/audit-fixes.json", "utf8"));
 const fixFor = (r) => FIXES.find((f) => new RegExp(f.match).test(`${r.page} ${r.element}`))?.fix ?? "";
 
 const STATES = ["logged-out", "demo", "user", "admin"];
@@ -53,7 +53,7 @@ admin) × ${combos.length} viewport/theme combinations (${combos.join(", ")}). D
 mobile 390 px. Each element is reached with the mouse and the keyboard (Tab focus + Enter/Space/arrows) and
 must do something visible and correct: navigate to the right page (no 404), open a new tab on the right
 site, open a menu/dialog (whose contents are then tested too), or update the page. Console errors and failed
-requests fail the page. Chat replies are mocked, so the audit makes no model calls.
+requests fail the page (the \"console and network\" row). Chat replies are mocked, so the audit makes no model calls.
 
 **${rows.length} checks on ${finalAttempt.size} page × state × viewport × theme combinations: ${rows.length - fails.length} passed, ${fails.length} failed.**
 ${retried ? `${retried} page run(s) were retried once after a network error; only the final attempt counts.` : "No page needed a retry."}
@@ -72,6 +72,8 @@ for (const g of sorted) {
 }
 audit += `\n## Fixes made during the audit\n\n`;
 for (const f of FIXES) audit += `- **${f.title}**: ${f.fix}\n`;
+audit += `\n## The 6 failures from the first production run\n\n| Failure | Cause | Fix |\n|---|---|---|\n`;
+for (const f of ORIGINAL) audit += `| ${esc(f.failure)} | ${esc(f.cause)} | ${esc(f.fix)} |\n`;
 fs.writeFileSync("../tests/ui-audit.md", audit);
 
 // ------------------------------------------------------------------ inventory
@@ -85,6 +87,7 @@ element before them. "Header/footer" items are shared by every page using that l
 const byPage = new Map();
 for (const g of sorted) {
   const r = g[0];
+  if (r.kind === "console") continue; // a page check, not an element
   if (!byPage.has(r.page)) byPage.set(r.page, new Map());
   const states = byPage.get(r.page);
   if (!states.has(r.element)) states.set(r.element, { kind: r.kind, states: new Set(), details: new Set() });
