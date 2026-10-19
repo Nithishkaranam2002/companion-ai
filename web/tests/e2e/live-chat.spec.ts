@@ -63,7 +63,12 @@ test.describe("@live demo mode", () => {
     const errors: string[] = [];
     page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
     page.on("response", (r) => r.status() >= 400 && errors.push(`${r.status()} ${r.request().method()} ${r.url()}`));
-    const me = page.waitForResponse((r) => new URL(r.url()).pathname === "/me" && r.ok(), { timeout: 60_000 });
+    // The demo button does a full navigation to /chat, so read the /me that /chat makes (an earlier
+    // one from the landing page loses its body when the page unloads).
+    const me = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === "/me" && r.ok() && new URL(r.frame().url()).pathname === "/chat",
+      { timeout: 60_000 },
+    );
     await page.goto(`${baseURL}/`);
     const signup = captureAnonymousUser(page);
     await page.getByRole("button", { name: "Try it free — no sign-up" }).first().click();
