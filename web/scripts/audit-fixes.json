@@ -62,13 +62,23 @@
     },
     {
       "title": "An ended session showed an error instead of sign-in",
-      "match": "console and network",
+      "match": "^/ console and network",
       "fix": "A 401 from the API now signs this browser out once and goes to /login?expired=1 with \"Your session ended\"; links to private pages no longer prefetch (a prefetched sign-in redirect 404'd). In the audit, the reset now leaves the page (about:blank) before swapping cookies, so a stale /chat page can't fire that 401 during the next check."
     },
     {
       "title": "Pricing claimed a BAA for the clinic plan",
       "match": "^/pricing ",
       "fix": "The Clinic plan is now Teams (\"for workplaces and community groups\"), and the BAA line is \"Custom onboarding and admin controls\". Nothing on the site says HIPAA compliant."
+    },
+    {
+      "title": "The first write after the API woke up hung",
+      "match": "(?!)",
+      "fix": "Found by the live specs: a mood note, rename or chat message right after a cold start waited on the redaction model's lazy load while /health already said ok. The API now loads it during warm-up, and /health reports a \"redaction\" check."
+    },
+    {
+      "title": "Live demo tests leaked anonymous users",
+      "match": "(?!)",
+      "fix": "The demo button navigates as soon as sign-up returns, so the test never saw the new user's id. The test now passes the real sign-up through tagged as a test user and reads the id itself, so cleanup always finds it."
     }
   ],
   "original": [
