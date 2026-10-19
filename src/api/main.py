@@ -94,7 +94,9 @@ def check_llm() -> None:
 
 
 # Late-bound lambdas so tests can swap the checks. A failing check never stops the app.
-warmup = Warmup({"knowledge_base": lambda: get_kb(), "llm": lambda: check_llm()})
+# "redaction" loads the Presidio model up front, so the first write after a cold start doesn't wait on it.
+warmup = Warmup({"knowledge_base": lambda: get_kb(), "redaction": lambda: redact("warm-up"),
+                 "llm": lambda: check_llm()})
 
 
 @asynccontextmanager

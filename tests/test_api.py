@@ -61,9 +61,26 @@ def test_health_ok_after_warmup(client: TestClient, kb: KnowledgeBase,
                                 monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("api.main.get_kb", lambda: kb)
     monkeypatch.setattr("api.main.ping_provider", lambda: None)
+    warmed: list[str] = []
+    monkeypatch.setattr("api.main.redact", lambda text: warmed.append(text) or text)
     with client:  # runs the lifespan, which starts the warm-up thread
         assert wait_until(lambda: client.get("/health").json()["status"] == "ok")
-        assert client.get("/health").json()["checks"] == {"knowledge_base": "ok", "llm": "ok"}
+        assert client.get("/health").json()["checks"] == {
+            "knowledge_base": "ok", "redaction": "ok", "llm": "ok"}
+    assert warmed == ["warm-up"]  # the redaction model loads before the first write needs it
+
+
+def test_degraded_until_redaction_loads(client: TestClient, kb: KnowledgeBase,
+                                        monkeypatch: pytest.MonkeyPatch) -> None:
+    def not_yet(text: str) -> str:
+        raise MemoryError
+    monkeypatch.setattr("api.main.get_kb", lambda: kb)
+    monkeypatch.setattr("api.main.ping_provider", lambda: None)
+    monkeypatch.setattr("api.main.redact", not_yet)
+    monkeypatch.setattr("api.main.warmup.base_delay_s", 0.01)
+    with client:
+        assert wait_until(lambda: client.get("/health").json()["checks"]["redaction"] == "error: MemoryError")
+        assert client.get("/health").json()["status"] == "degraded"
 
 
 def test_starts_degraded_when_provider_is_down(client: TestClient,
@@ -72,6 +89,7 @@ def test_starts_degraded_when_provider_is_down(client: TestClient,
         raise ConnectionError("sk-secret-should-not-leak")
     monkeypatch.setattr("api.main.get_kb", down)
     monkeypatch.setattr("api.main.ping_provider", down)
+    monkeypatch.setattr("api.main.redact", lambda text: text)
     monkeypatch.setattr("api.main.warmup.base_delay_s", 0.01)
     with client:
         assert wait_until(lambda: "error" in client.get("/health").json()["checks"]["knowledge_base"])

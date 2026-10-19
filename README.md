@@ -93,6 +93,8 @@ The API starts and stays up even when a dependency doesn't:
   `/health` always returns 200 so the platform keeps the instance alive, and reports
   `{"status": "degraded", "checks": {...}}` until every check passes. It reports exception types
   only (e.g. `"llm": "error: AuthenticationError"`), never messages that could echo a key.
+- **The redaction model loads at boot** (`"redaction"` check), not on the first write, so the first
+  message, mood note or rename after a cold start doesn't wait on it.
 - **The key is verified at boot** with a free OpenAI metadata call (no tokens spent), so a bad
   or mis-pasted key shows up on `/health` instead of on the first chat.
 - **OpenAI calls retry** connection errors, 429s and 5xx with backoff (4 retries, 60 s timeout).
@@ -319,7 +321,7 @@ Secrets live only in the Render and Vercel dashboards and local `.env` files, wh
    Already set by `render.yaml` (no action needed): `LLM_PROVIDER=openai`, `LLM_MODEL=gpt-5.5`,
    `EMBEDDINGS_PROVIDER=openai`, `EMBEDDINGS_MODEL=text-embedding-3-small`,
    `RATE_LIMIT_USER_PER_HOUR=20`, `RATE_LIMIT_DEMO_TOTAL=10`, `RATE_LIMIT_DEMO_GLOBAL_PER_DAY=500`.
-3. Deploy, then open `/health`. Expect `{"status":"ok","checks":{"knowledge_base":"ok","llm":"ok"}}`.
+3. Deploy, then open `/health`. Expect `{"status":"ok","checks":{"knowledge_base":"ok","redaction":"ok","llm":"ok"}}`.
    `"llm": "error: AuthenticationError"` means the key is wrong. Re-paste it; the app keeps
    running and picks it up on the next deploy.
 
